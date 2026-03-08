@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, RefreshCw, ArrowUpDown, Play, Square, RotateCcw, Download, ArrowUpCircle, Save, Terminal, Camera, GitCompare, Trash2, Users, Plus } from "lucide-react";
+import { ChevronLeft, RefreshCw, ArrowUpDown, Play, Square, RotateCcw, Download, ArrowUpCircle, Save, Terminal, Camera, GitCompare, Trash2, Users, Plus, Radio, LogOut, Search } from "lucide-react";
 import { useInstances, type InstanceInfo } from "../hooks/useInstances";
 import { get, post, put } from "../lib/api";
 import { del } from "../lib/api";
 import { AgentForm, type AgentFormValues } from "../components/AgentForm";
+import { ChannelForm, type ChannelFormValues } from "../components/ChannelForm";
 import { TemplateApplyModal } from "../components/TemplateApplyModal";
 import { RestartDialog } from "../components/RestartDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -23,7 +24,7 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
 }
 
-type Tab = "overview" | "sessions" | "config" | "security" | "agents" | "llm" | "control";
+type Tab = "overview" | "sessions" | "config" | "security" | "agents" | "channels" | "llm" | "control";
 
 function OverviewTab({ inst }: { inst: InstanceInfo }) {
   const totalTokens = inst.sessions.reduce((t, s) => t + (s.totalTokens || 0), 0);
@@ -300,7 +301,7 @@ function SecurityTab({ inst }: { inst: InstanceInfo }) {
               return (
                 <tr key={a.id} className="border-b border-edge/50">
                   <td className="p-3">{a.id}{a.isDefault ? " (default)" : ""}</td>
-                  <td className="p-3">{tools.length > 0 ? tools.join(", ") : "all"}</td>
+                  <td className="p-3">{tools.length === 0 || (tools.length === 1 && tools[0] === "*") ? <span className="px-2 py-0.5 rounded text-xs bg-danger-dim text-danger">all</span> : tools.join(", ")}</td>
                   <td className="p-3">
                     {exec ? (
                       <div className="space-y-0.5">
@@ -1664,6 +1665,229 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
   );
 }
 
+function ChannelsTab({ inst }: { inst: InstanceInfo }) {
+  const [channels, setChannels] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [probing, setProbing] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<{ channel: string; accountId: string } | null>(null);
+  const [editValues, setEditValues] = useState<ChannelFormValues | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
+
+  useEffect(() => { loadChannels(); }, [inst.id]);
+
+  async function loadChannels() {
+    setLoading(true);
+    try {
+      const data = await get<any>(`/lifecycle/${inst.id}/channels`);
+      setChannels(data.channels || []);
+    } catch { setChannels([]); }
+    setLoading(false);
+  }
+
+  async function handleProbe() {
+    setProbing(true);
+    try {
+      const data = await post<any>(`/lifecycle/${inst.id}/channels/probe`);
+      setChannels(data.channels || []);
+    } catch { /* keep existing */ }
+    setProbing(false);
+  }
+
+  async function handleLogout(channel: string, accountId: string) {
+    if (!confirm(`Logout ${channel}/${accountId}? This will clear stored credentials.`)) return;
+    try {
+      await post(`/lifecycle/${inst.id}/channels/logout`, { channel, accountId });
+      loadChannels();
+    } catch (err: any) {
+      alert(`Logout failed: ${err.message}`);
+    }
+  }
+
+  function startEdit(channel: string, accountId: string, account: any, configChannels: any) {
+    const chConfig = configChannels?.[channel] || {};
+    const accConfig = chConfig.accounts?.[accountId] || chConfig;
+    setEditingAccount({ channel, accountId });
+    setEditValues({
+      enabled: account.enabled ?? true,
+      dmPolicy: accConfig.dmPolicy || account.dmPolicy || "",
+      groupPolicy: accConfig.groupPolicy || account.groupPolicy || "",
+      allowFrom: (accConfig.allowFrom || account.allowFrom || []).map(String),
+      groupAllowFrom: (accConfig.groupAllowFrom || account.groupAllowFrom || []).map(String),
+      historyLimit: accConfig.historyLimit ?? "",
+      dmHistoryLimit: accConfig.dmHistoryLimit ?? "",
+      textChunkLimit: accConfig.textChunkLimit ?? "",
+      chunkMode: accConfig.chunkMode || "",
+      blockStreaming: accConfig.blockStreaming ?? false,
+    });
+  }
+
+  async function handleSave() {
+    if (!editingAccount || !editValues) return;
+    setSaving(true);
+    try {
+      await put(`/lifecycle/${inst.id}/channels/config`, {
+        channel: editingAccount.channel,
+        accountId: editingAccount.accountId,
+        config: editValues,
+      });
+      setEditingAccount(null);
+      setEditValues(null);
+      setShowRestartDialog(true);
+      loadChannels();
+    } catch (err: any) {
+      alert(`Save failed: ${err.message}`);
+    }
+    setSaving(false);
+  }
+
+  async function handleToggleEnabled(channel: string, accountId: string, currentEnabled: boolean) {
+    try {
+      await put(`/lifecycle/${inst.id}/channels/config`, {
+        channel,
+        accountId,
+        config: { enabled: !currentEnabled },
+      });
+      setShowRestartDialog(true);
+      loadChannels();
+    } catch (err: any) {
+      alert(`Toggle failed: ${err.message}`);
+    }
+  }
+
+  const configChannels = (inst.config as any)?.parsed?.channels || {};
+
+  if (loading) return <div className="text-ink-3 text-sm p-4">Loading channels...</div>;
+
+  return (
+    <div className="space-y-4">
+      {/* Header with probe button */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-ink">Channels</h3>
+        <button
+          onClick={handleProbe}
+          disabled={probing}
+          className="flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink"
+        >
+          <Search size={14} className={probing ? "animate-spin" : ""} />
+          {probing ? "Probing..." : "Probe"}
+        </button>
+      </div>
+
+      {channels.length === 0 && <p className="text-ink-3 text-sm">No channels configured</p>}
+
+      {/* Channel account cards */}
+      {channels.map((ch: any) =>
+        ch.accounts.map((acc: any) => {
+          const isEditing = editingAccount?.channel === ch.type && editingAccount?.accountId === acc.accountId;
+          const statusLabel = !acc.enabled ? "disabled" : acc.connected ? "connected" : acc.running ? "starting" : acc.lastError ? "error" : "stopped";
+          const statusColor = statusLabel === "connected" ? "bg-ok" : statusLabel === "error" ? "bg-danger" : statusLabel === "starting" ? "bg-warn" : "bg-ink-3";
+
+          return (
+            <div key={`${ch.type}-${acc.accountId}`} className="bg-s1 border border-edge rounded-card shadow-card overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-edge">
+                <div className="flex items-center gap-2">
+                  <Radio size={16} className="text-ink-3" />
+                  <span className="font-semibold text-ink">{ch.label || ch.type}</span>
+                  <span className="text-ink-3 text-sm">/ {acc.accountId}</span>
+                  {acc.name && <span className="text-ink-2 text-sm">({acc.name})</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-block w-2 h-2 rounded-full ${statusColor}`} />
+                  <span className={`text-xs ${statusLabel === "connected" ? "text-ok" : statusLabel === "error" ? "text-danger" : "text-ink-3"}`}>
+                    {statusLabel}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status details */}
+              <div className="p-4 space-y-2 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div><span className="text-ink-3">Connected:</span> <span className="text-ink">{timeAgo(acc.lastConnectedAt) || "\u2014"}</span></div>
+                  <div><span className="text-ink-3">Last in:</span> <span className="text-ink">{timeAgo(acc.lastInboundAt) || "\u2014"}</span></div>
+                  <div><span className="text-ink-3">Last out:</span> <span className="text-ink">{timeAgo(acc.lastOutboundAt) || "\u2014"}</span></div>
+                  <div><span className="text-ink-3">Reconnects:</span> <span className="text-ink">{acc.reconnectAttempts ?? 0}</span></div>
+                </div>
+                {acc.lastError && (
+                  <div className="text-xs text-danger bg-danger/10 px-2 py-1 rounded">{acc.lastError}</div>
+                )}
+
+                {/* Policies */}
+                <div className="flex flex-wrap gap-3 text-xs pt-1">
+                  {acc.dmPolicy && <div><span className="text-ink-3">DM:</span> <span className="text-ink">{acc.dmPolicy}</span></div>}
+                  {acc.groupPolicy && <div><span className="text-ink-3">Group:</span> <span className="text-ink">{acc.groupPolicy}</span></div>}
+                  {acc.allowFrom?.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-ink-3">Allow:</span>
+                      {acc.allowFrom.map((u: string) => (
+                        <span key={u} className="px-1.5 py-0.5 rounded bg-cyan-dim text-cyan text-[10px]">{u}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Edit form */}
+                {isEditing && editValues && (
+                  <div className="mt-3 pt-3 border-t border-edge">
+                    <ChannelForm
+                      values={editValues}
+                      onChange={setEditValues}
+                      channelType={ch.type}
+                      accountId={acc.accountId}
+                    />
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="px-3 py-1.5 text-sm rounded bg-brand text-white hover:bg-brand-light disabled:opacity-50"
+                      >
+                        {saving ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        onClick={() => { setEditingAccount(null); setEditValues(null); }}
+                        className="px-3 py-1.5 text-sm rounded bg-s2 border border-edge text-ink hover:bg-s3"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              {!isEditing && (
+                <div className="flex gap-2 px-4 pb-4">
+                  <button
+                    onClick={() => startEdit(ch.type, acc.accountId, acc, configChannels)}
+                    className="px-3 py-1.5 text-xs rounded bg-s2 border border-edge text-ink hover:bg-s3"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleToggleEnabled(ch.type, acc.accountId, acc.enabled)}
+                    className="px-3 py-1.5 text-xs rounded bg-s2 border border-edge text-ink hover:bg-s3"
+                  >
+                    {acc.enabled ? "Disable" : "Enable"}
+                  </button>
+                  <button
+                    onClick={() => handleLogout(ch.type, acc.accountId)}
+                    className="px-3 py-1.5 text-xs rounded bg-s2 border border-edge text-ink hover:bg-s3 flex items-center gap-1"
+                  >
+                    <LogOut size={12} /> Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      <RestartDialog instanceId={inst.id} open={showRestartDialog} onClose={() => setShowRestartDialog(false)} />
+    </div>
+  );
+}
+
 export function Instance() {
   const { id } = useParams<{ id: string }>();
   const { instances, loading, refresh } = useInstances();
@@ -1672,7 +1896,7 @@ export function Instance() {
 
   useEffect(() => {
     const tab = searchParams.get("tab") as Tab;
-    if (tab && ["overview", "sessions", "config", "security", "agents", "control"].includes(tab)) {
+    if (tab && ["overview", "sessions", "config", "security", "agents", "channels", "llm", "control"].includes(tab)) {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -1702,6 +1926,7 @@ export function Instance() {
     { key: "config", label: "Config" },
     { key: "security", label: "Security" },
     { key: "agents", label: `Agents (${inst.agents.length})` },
+    { key: "channels", label: `Channels (${inst.channels.length})` },
     { key: "llm", label: "LLM" },
     { key: "control", label: "Control" },
   ];
@@ -1739,6 +1964,7 @@ export function Instance() {
           {activeTab === "config" && <ConfigTab inst={inst} />}
           {activeTab === "security" && <SecurityTab inst={inst} />}
           {activeTab === "agents" && <AgentsTab inst={inst} initialAgentId={searchParams.get("agent") || undefined} />}
+          {activeTab === "channels" && <ChannelsTab inst={inst} />}
           {activeTab === "llm" && <LlmTab inst={inst} />}
           {activeTab === "control" && <ControlTab inst={inst} />}
         </div>
