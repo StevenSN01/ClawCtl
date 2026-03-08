@@ -111,12 +111,24 @@ ClawCtl communicates with OpenClaw Gateway via its native WebSocket protocol:
 
 ---
 
+## Internationalization (i18n)
+
+The frontend supports **English** and **Chinese** with automatic language detection:
+
+- **Auto-detect**: follows browser/system language preference
+- **Manual switch**: Settings page language dropdown, persisted in localStorage (`clawctl-lang`)
+- **Stack**: `react-i18next` + `i18next` + `i18next-browser-languagedetector`
+- **Locale files**: `packages/web/src/locales/en.json` and `zh.json`
+
+**Development rule**: All user-facing strings must use `t("namespace.key")` via `useTranslation()`. When adding or modifying any frontend text, update both `en.json` and `zh.json`. Use `{{var}}` (double curly braces) for interpolation variables.
+
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | **Backend** | Hono + Node.js, SQLite (better-sqlite3), WebSocket (ws), ssh2 |
 | **Frontend** | React + Tailwind CSS + Vite, React Router, ReactFlow, Recharts |
+| **i18n** | react-i18next, i18next-browser-languagedetector (EN + ZH) |
 | **Auth** | HMAC-SHA256 session tokens, scryptSync password hashing, httpOnly cookies |
 | **SSH** | ssh2-based remote discovery with automatic port-forward tunneling |
 | **LLM** | Multi-provider (OpenAI / Anthropic / Azure / Ollama) for summaries, digest, and injection scanning |
