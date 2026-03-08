@@ -12,6 +12,7 @@ import { Operations } from "./pages/Operations";
 import { Settings } from "./pages/Settings";
 import { Instance } from "./pages/Instance";
 import { Monitoring } from "./pages/Monitoring";
+import { Channels } from "./pages/Channels";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const auth = useAuthProvider();
@@ -47,6 +48,7 @@ export function App() {
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="sessions" element={<Sessions />} />
+            <Route path="channels" element={<Channels />} />
             <Route path="usage" element={<Usage />} />
             <Route path="security" element={<Security />} />
             <Route path="config" element={<Config />} />

@@ -4,6 +4,7 @@ import {
   MessageSquare,
   BarChart3,
   Activity,
+  Radio,
   ShieldCheck,
   FileCode2,
   Wrench,
@@ -16,6 +17,7 @@ import {
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/sessions", label: "Sessions", icon: MessageSquare },
+  { to: "/channels", label: "Channels", icon: Radio },
   { to: "/usage", label: "Usage", icon: BarChart3 },
   { to: "/monitoring", label: "Monitoring", icon: Activity },
   { to: "/security", label: "Security", icon: ShieldCheck },
