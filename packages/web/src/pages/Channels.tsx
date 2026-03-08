@@ -156,7 +156,7 @@ export function Channels() {
                   <td className="p-3">
                     <span className="text-ok">{row.connectedCount} connected</span>
                     {row.runningCount > row.connectedCount && (
-                      <span className="text-warn ml-2">{row.runningCount - row.connectedCount} starting</span>
+                      <span className="text-ok ml-2">{row.runningCount - row.connectedCount} running</span>
                     )}
                     {row.accountCount > row.runningCount && (
                       <span className="text-ink-3 ml-2">{row.accountCount - row.runningCount} stopped</span>

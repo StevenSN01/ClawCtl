@@ -1799,7 +1799,7 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
               <div className="flex items-center gap-3 text-xs">
                 <span className="text-ink-2">{ch.accounts.length} account{ch.accounts.length !== 1 ? "s" : ""}</span>
                 {connectedCount > 0 && <span className="text-ok">{connectedCount} connected</span>}
-                {runningCount > connectedCount && <span className="text-warn">{runningCount - connectedCount} starting</span>}
+                {runningCount > connectedCount && <span className="text-ok">{runningCount - connectedCount} running</span>}
                 {ch.accounts.length > runningCount && <span className="text-ink-2">{ch.accounts.length - runningCount} stopped</span>}
               </div>
             </div>
@@ -1811,8 +1811,8 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                 return score(b) - score(a);
               }).map((acc: any) => {
                 const isEditing = editingAccount?.channel === ch.type && editingAccount?.accountId === acc.accountId;
-                const statusLabel = !acc.enabled ? "disabled" : acc.connected ? "connected" : acc.running ? "starting" : acc.lastError ? "error" : "stopped";
-                const statusColor = statusLabel === "connected" ? "bg-ok" : statusLabel === "error" ? "bg-danger" : statusLabel === "starting" ? "bg-warn" : "bg-ink-2";
+                const statusLabel = !acc.enabled ? "disabled" : acc.connected ? "connected" : acc.running ? "running" : acc.lastError ? "error" : "stopped";
+                const statusColor = statusLabel === "connected" ? "bg-ok" : statusLabel === "running" ? "bg-ok" : statusLabel === "error" ? "bg-danger" : "bg-ink-2";
 
                 return (
                   <div key={acc.accountId} className="p-4">
@@ -1822,7 +1822,7 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                         <span className={`inline-block w-2 h-2 rounded-full ${statusColor}`} />
                         <span className="text-sm font-medium text-ink">{acc.accountId}</span>
                         {acc.name && <span className="text-ink-2 text-xs">({acc.name})</span>}
-                        <span className={`text-xs ${statusLabel === "connected" ? "text-ok" : statusLabel === "error" ? "text-danger" : statusLabel === "starting" ? "text-warn" : "text-ink-2"}`}>
+                        <span className={`text-xs ${statusLabel === "connected" ? "text-ok" : statusLabel === "running" ? "text-ok" : statusLabel === "error" ? "text-danger" : "text-ink-2"}`}>
                           {statusLabel}
                         </span>
                       </div>
