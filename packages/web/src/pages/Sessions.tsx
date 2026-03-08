@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowUpDown, Pencil } from "lucide-react";
 import { useInstances } from "../hooks/useInstances";
 import { get, post, put } from "../lib/api";
 
-function timeAgo(ts?: number): string {
+function timeAgo(ts: number | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (!ts) return "";
   const diff = Date.now() - ts;
-  if (diff < 60_000) return "just now";
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
-  return `${Math.floor(diff / 86400_000)}d ago`;
+  if (diff < 60_000) return t("common.justNow");
+  if (diff < 3600_000) return t("common.mAgo", { n: Math.floor(diff / 60_000) });
+  if (diff < 86400_000) return t("common.hAgo", { n: Math.floor(diff / 3600_000) });
+  return t("common.dAgo", { n: Math.floor(diff / 86400_000) });
 }
 
 /** Derive a short display label from a session key */
@@ -18,6 +19,7 @@ function sessionLabel(s: { displayName?: string; key: string }, alias?: string):
 }
 
 export function Sessions() {
+  const { t } = useTranslation();
   const { instances } = useInstances();
   const [selectedSession, setSelectedSession] = useState<{ instanceId: string; key: string } | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -74,7 +76,7 @@ export function Sessions() {
       if (!groups.has(hostKey)) {
         const connLabel = inst.connection.label || "";
         const slashIdx = connLabel.indexOf("/");
-        const hostLabel = hostKey === "local" ? "Local" : (slashIdx > 0 ? connLabel.slice(0, slashIdx) : hostKey);
+        const hostLabel = hostKey === "local" ? t("dashboard.local") : (slashIdx > 0 ? connLabel.slice(0, slashIdx) : hostKey);
         groups.set(hostKey, { hostKey, hostLabel, instances: [] });
       }
       groups.get(hostKey)!.instances.push(inst);
@@ -146,15 +148,15 @@ export function Sessions() {
     <div className="flex gap-4 h-full">
       <div className="w-1/3 flex flex-col min-w-0">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-2xl font-bold text-ink">Sessions</h1>
+          <h1 className="text-2xl font-bold text-ink">{t("sessions.title")}</h1>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSortAsc(!sortAsc)}
               className="flex items-center gap-1 text-xs text-ink-3 hover:text-ink px-1.5 py-0.5 rounded bg-s2"
-              title={sortAsc ? "Oldest first" : "Newest first"}
+              title={sortAsc ? t("sessions.oldestFirst") : t("sessions.newestFirst")}
             >
               <ArrowUpDown size={12} />
-              {sortAsc ? "Old" : "New"}
+              {sortAsc ? t("common.old") : t("common.new")}
             </button>
             <span className="text-sm text-ink-3">{filtered.length}</span>
           </div>
@@ -167,7 +169,7 @@ export function Sessions() {
               onClick={() => { setSelectedHost("all"); setSelectedInstance("all"); }}
               className={`px-2 py-1 rounded text-xs whitespace-nowrap ${selectedHost === "all" ? "bg-s3 text-ink" : "bg-s2 text-ink-3 hover:text-ink"}`}
             >
-              All hosts
+              {t("sessions.allHosts")}
             </button>
             {hostGroups.map((g) => {
               const count = g.instances.reduce((s, i) => s + i.sessions.length, 0);
@@ -191,7 +193,7 @@ export function Sessions() {
             onChange={(e) => setSelectedInstance(e.target.value)}
             className="mb-2 bg-s2 border border-edge rounded-lg px-3 py-1.5 text-xs text-ink"
           >
-            <option value="all">All instances ({allSessions.length})</option>
+            <option value="all">{t("sessions.allInstances", { n: allSessions.length })}</option>
             {instanceCounts.map((ic) => (
               <option key={ic.id} value={ic.id}>{ic.label} ({ic.count})</option>
             ))}
@@ -201,7 +203,7 @@ export function Sessions() {
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter by name, channel..."
+          placeholder={t("sessions.filterPlaceholder")}
           className="mb-3 bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors"
         />
         <div className="flex-1 overflow-auto space-y-1">
@@ -230,10 +232,10 @@ export function Sessions() {
                       if (e.key === "Enter") saveAlias(s.instanceId, s.key, aliasInput.trim());
                       if (e.key === "Escape") setEditingAlias(null);
                     }}
-                    placeholder="Enter alias..."
+                    placeholder={t("sessions.enterAlias")}
                     className="flex-1 min-w-0 bg-s2 border border-cyan rounded px-1.5 py-0.5 text-xs text-ink focus:outline-none"
                   />
-                  <span className="text-[10px] text-ink-3">Enter to save</span>
+                  <span className="text-[10px] text-ink-3">{t("sessions.enterToSave")}</span>
                 </div>
               ) : (
                 <>
@@ -245,11 +247,11 @@ export function Sessions() {
                       <button
                         onClick={(e) => { e.stopPropagation(); setEditingAlias(aliasKey); setAliasInput(alias || ""); }}
                         className="text-ink-3 hover:text-cyan transition-colors"
-                        title="Set alias"
+                        title={t("sessions.setAlias")}
                       >
                         <Pencil size={11} />
                       </button>
-                      <span className="text-xs text-ink-3">{timeAgo(s.updatedAt)}</span>
+                      <span className="text-xs text-ink-3">{timeAgo(s.updatedAt, t)}</span>
                     </div>
                   </div>
                   {alias && (
@@ -265,13 +267,13 @@ export function Sessions() {
                 {s.model && <><span>·</span><span>{s.model}</span></>}
               </div>
               {(s.totalTokens ?? 0) > 0 && (
-                <div className="text-xs text-ink-3">{(s.totalTokens || 0).toLocaleString()} tokens</div>
+                <div className="text-xs text-ink-3">{(s.totalTokens || 0).toLocaleString()} {t("common.tokens")}</div>
               )}
             </div>
             );
           })}
           {filtered.length === 0 && (
-            <div className="text-center py-8 text-ink-3 text-sm">No sessions found</div>
+            <div className="text-center py-8 text-ink-3 text-sm">{t("sessions.noSessionsFound")}</div>
           )}
         </div>
       </div>
@@ -282,21 +284,21 @@ export function Sessions() {
             <div className="flex items-center justify-between mb-4 gap-2">
               <h2 className="text-lg font-semibold truncate text-ink">{selectedSession.key}</h2>
               <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs text-ink-3">{messages.length} msg{messages.length !== 1 ? "s" : ""}</span>
+                <span className="text-xs text-ink-3">{messages.length} {t("sessions.msg", { count: messages.length })}</span>
                 <button
                   onClick={() => setMsgReverse(!msgReverse)}
                   className="flex items-center gap-1 text-xs text-ink-3 hover:text-ink px-1.5 py-0.5 rounded bg-s2"
-                  title={msgReverse ? "Newest first" : "Oldest first"}
+                  title={msgReverse ? t("sessions.newestFirst") : t("sessions.oldestFirst")}
                 >
                   <ArrowUpDown size={12} />
-                  {msgReverse ? "New" : "Old"}
+                  {msgReverse ? t("common.new") : t("common.old")}
                 </button>
                 {hasMore && (
                   <button
                     onClick={loadMore}
                     className="px-2 py-1 text-xs bg-s3 hover:bg-edge-hi rounded"
                   >
-                    Load more
+                    {t("common.loadMore")}
                   </button>
                 )}
                 <button
@@ -304,7 +306,7 @@ export function Sessions() {
                   disabled={summarizing}
                   className="px-3 py-1.5 text-sm bg-brand hover:bg-brand-light rounded disabled:opacity-50"
                 >
-                  {summarizing ? "Summarizing..." : "Summarize"}
+                  {summarizing ? t("sessions.summarizing") : t("sessions.summarize")}
                 </button>
               </div>
             </div>
@@ -314,7 +316,7 @@ export function Sessions() {
               </div>
             )}
             {loadingMsgs ? (
-              <div className="flex-1 flex items-center justify-center text-ink-3">Loading messages...</div>
+              <div className="flex-1 flex items-center justify-center text-ink-3">{t("sessions.loadingMessages")}</div>
             ) : (
             <div className="flex-1 overflow-auto space-y-3">
               {(msgReverse ? [...messages].reverse() : messages).map((msg, i) => (
@@ -328,7 +330,7 @@ export function Sessions() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-ink-3">
-            Select a session to view details
+            {t("sessions.selectSession")}
           </div>
         )}
       </div>

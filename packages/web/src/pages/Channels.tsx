@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Radio, RefreshCw } from "lucide-react";
 import { useInstances } from "../hooks/useInstances";
 import { get } from "../lib/api";
@@ -15,16 +16,17 @@ interface ChannelRow {
   lastActivity: number | null;
 }
 
-function timeAgo(ts: number | null): string {
-  if (!ts) return "—";
+function timeAgo(ts: number | null, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (!ts) return "\u2014";
   const diff = Date.now() - ts;
-  if (diff < 60_000) return "just now";
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
-  return `${Math.floor(diff / 86400_000)}d ago`;
+  if (diff < 60_000) return t("common.justNow");
+  if (diff < 3600_000) return t("common.mAgo", { n: Math.floor(diff / 60_000) });
+  if (diff < 86400_000) return t("common.hAgo", { n: Math.floor(diff / 3600_000) });
+  return t("common.dAgo", { n: Math.floor(diff / 86400_000) });
 }
 
 export function Channels() {
+  const { t } = useTranslation();
   const { instances } = useInstances();
   const navigate = useNavigate();
   const [selectedHost, setSelectedHost] = useState("all");
@@ -41,7 +43,7 @@ export function Channels() {
       if (!groups.has(hostKey)) {
         const connLabel = inst.connection.label || "";
         const slashIdx = connLabel.indexOf("/");
-        const hostLabel = hostKey === "local" ? "Local" : (slashIdx > 0 ? connLabel.slice(0, slashIdx) : hostKey);
+        const hostLabel = hostKey === "local" ? t("dashboard.local") : (slashIdx > 0 ? connLabel.slice(0, slashIdx) : hostKey);
         groups.set(hostKey, { hostKey, hostLabel, instances: [] });
       }
       groups.get(hostKey)!.instances.push(inst);
@@ -93,9 +95,9 @@ export function Channels() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-ink">Channels</h1>
+        <h1 className="text-2xl font-bold text-ink">{t("channels.title")}</h1>
         <button onClick={loadChannels} disabled={loading} className="flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink">
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> {t("common.refresh")}
         </button>
       </div>
 
@@ -106,7 +108,7 @@ export function Channels() {
             onClick={() => setSelectedHost("all")}
             className={`px-3 py-1 text-sm rounded ${selectedHost === "all" ? "bg-brand text-white" : "bg-s2 text-ink-2 hover:bg-s3"}`}
           >
-            All
+            {t("common.all")}
           </button>
           {hostGroups.map((g) => (
             <button
@@ -122,19 +124,19 @@ export function Channels() {
 
       {/* Channel table */}
       {loading && rows.length === 0 ? (
-        <div className="text-ink-3 text-sm">Loading channels...</div>
+        <div className="text-ink-3 text-sm">{t("channels.loadingChannels")}</div>
       ) : rows.length === 0 ? (
-        <div className="text-ink-3 text-sm">No channels found on connected instances.</div>
+        <div className="text-ink-3 text-sm">{t("channels.noChannels")}</div>
       ) : (
         <div className="bg-s1 border border-edge rounded-card overflow-hidden shadow-card">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-ink-3 uppercase tracking-wider border-b border-edge">
-                <th className="p-3">Instance</th>
-                <th className="p-3">Channel</th>
-                <th className="p-3">Accounts</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Last Activity</th>
+                <th className="p-3">{t("channels.instanceHeader")}</th>
+                <th className="p-3">{t("channels.channelHeader")}</th>
+                <th className="p-3">{t("channels.accountsHeader")}</th>
+                <th className="p-3">{t("channels.statusHeader")}</th>
+                <th className="p-3">{t("channels.lastActivityHeader")}</th>
               </tr>
             </thead>
             <tbody>
@@ -154,15 +156,15 @@ export function Channels() {
                   </td>
                   <td className="p-3 text-ink-2">{row.accountCount}</td>
                   <td className="p-3">
-                    <span className="text-ok">{row.connectedCount} connected</span>
+                    <span className="text-ok">{row.connectedCount} {t("channels.connected")}</span>
                     {row.runningCount > row.connectedCount && (
-                      <span className="text-ok ml-2">{row.runningCount - row.connectedCount} running</span>
+                      <span className="text-ok ml-2">{row.runningCount - row.connectedCount} {t("channels.running")}</span>
                     )}
                     {row.accountCount > row.runningCount && (
-                      <span className="text-ink-3 ml-2">{row.accountCount - row.runningCount} stopped</span>
+                      <span className="text-ink-3 ml-2">{row.accountCount - row.runningCount} {t("channels.stopped")}</span>
                     )}
                   </td>
-                  <td className="p-3 text-ink-3">{timeAgo(row.lastActivity)}</td>
+                  <td className="p-3 text-ink-3">{timeAgo(row.lastActivity, t)}</td>
                 </tr>
               ))}
             </tbody>

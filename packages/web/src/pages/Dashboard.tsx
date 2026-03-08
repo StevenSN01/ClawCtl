@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { RefreshCw, Plus, X, Download, Play } from "lucide-react";
 import { ReactFlow, type Node, type Edge, Background, Controls } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -33,6 +34,7 @@ function StatusDot({ status }: { status: string }) {
 
 function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () => void }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [starting, setStarting] = useState(false);
   const totalTokens = inst.sessions.reduce((t, s) => t + (s.totalTokens || 0), 0);
   const criticalCount = inst.securityAudit?.filter((a) => a.level === "critical").length || 0;
@@ -61,9 +63,9 @@ function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () =
       }
       // Timeout — refresh anyway
       onRefresh();
-      setStartError("Gateway may still be starting. Try refreshing.");
+      setStartError(t("dashboard.gatewayStartingHint"));
     } catch (err: any) {
-      setStartError(err.message || "Start failed");
+      setStartError(err.message || t("dashboard.startFailed"));
     } finally {
       setStarting(false);
     }
@@ -96,7 +98,7 @@ function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () =
             disabled={starting}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-ok/10 hover:bg-ok/20 text-ok rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
           >
-            <Play size={14} /> {starting ? "Starting..." : "Start Gateway"}
+            <Play size={14} /> {starting ? t("dashboard.starting") : t("dashboard.startGateway")}
           </button>
           {startError && <p className="text-xs text-danger mt-1">{startError}</p>}
         </div>
@@ -113,12 +115,12 @@ function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () =
           ))}
         </div>
         <p>
-          {inst.agents.length} agent{inst.agents.length !== 1 ? "s" : ""}
-          {" · "}{inst.sessions.length} session{inst.sessions.length !== 1 ? "s" : ""}
-          {totalTokens > 0 && <>{" · "}<span className="text-cyan">{totalTokens.toLocaleString()} tokens</span></>}
+          {inst.agents.length} {t("dashboard.agent", { count: inst.agents.length })}
+          {" · "}{inst.sessions.length} {t("dashboard.session", { count: inst.sessions.length })}
+          {totalTokens > 0 && <>{" · "}<span className="text-cyan">{totalTokens.toLocaleString()} {t("common.tokens")}</span></>}
         </p>
         {criticalCount > 0 && (
-          <p className="text-danger">{criticalCount} critical issue{criticalCount !== 1 ? "s" : ""}</p>
+          <p className="text-danger">{criticalCount} {t("dashboard.criticalIssue", { count: criticalCount })}</p>
         )}
       </div>
     </div>
@@ -126,11 +128,12 @@ function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () =
 }
 
 function TopologyView({ instances }: { instances: InstanceInfo[] }) {
+  const { t } = useTranslation();
   const nodes: Node[] = [
     {
       id: "hub",
       position: { x: 300, y: 250 },
-      data: { label: "ClawCtl Hub" },
+      data: { label: t("dashboard.clawctlHub") },
       style: {
         background: "#818cf8",
         color: "#fff",
@@ -214,6 +217,7 @@ function TopologyView({ instances }: { instances: InstanceInfo[] }) {
 }
 
 function AddInstanceDialog({ onClose, onAdd, isAdmin }: { onClose: () => void; onAdd: (url: string, token?: string, label?: string) => void; isAdmin: boolean }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<"instance" | "host">("instance");
   // Instance tab
   const [url, setUrl] = useState("");
@@ -244,9 +248,9 @@ function AddInstanceDialog({ onClose, onAdd, isAdmin }: { onClose: () => void; o
       // Auto-scan after adding
       const scan = await post<{ discovered: number; added: number }>(`/hosts/${created.id}/scan`, {});
       if (scan.discovered > 0) {
-        setHostMsg(`Host added successfully. Found ${scan.discovered} instance(s).`);
+        setHostMsg(t("dashboard.addDialog.hostAddedSuccess", { n: scan.discovered }));
       } else {
-        setHostMsg("Host added. No OpenClaw instances found — go to Settings > Remote Hosts to install OpenClaw on this host.");
+        setHostMsg(t("dashboard.addDialog.hostAddedNoInstances"));
       }
       setHostDone(true);
     } catch (e: any) { setHostMsg(`Error: ${e.message}`); }
@@ -266,14 +270,14 @@ function AddInstanceDialog({ onClose, onAdd, isAdmin }: { onClose: () => void; o
             onClick={() => setTab("instance")}
             className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${tab === "instance" ? "bg-s3 text-ink shadow-sm" : "text-ink-3 hover:text-ink"}`}
           >
-            Remote Instance
+            {t("dashboard.addDialog.remoteInstance")}
           </button>
           {isAdmin && (
             <button
               onClick={() => setTab("host")}
               className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${tab === "host" ? "bg-s3 text-ink shadow-sm" : "text-ink-3 hover:text-ink"}`}
             >
-              SSH Host
+              {t("dashboard.addDialog.sshHost")}
             </button>
           )}
         </div>
@@ -281,58 +285,58 @@ function AddInstanceDialog({ onClose, onAdd, isAdmin }: { onClose: () => void; o
         {tab === "instance" ? (
           <div className="space-y-3">
             <div>
-              <label className="block text-sm text-ink-2 mb-1">WebSocket URL</label>
-              <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="ws://host:18789" className={inputCls} />
+              <label className="block text-sm text-ink-2 mb-1">{t("dashboard.addDialog.wsUrlLabel")}</label>
+              <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t("dashboard.addDialog.wsUrlPlaceholder")} className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm text-ink-2 mb-1">Token (optional)</label>
+              <label className="block text-sm text-ink-2 mb-1">{t("dashboard.addDialog.tokenLabel")}</label>
               <input value={token} onChange={(e) => setToken(e.target.value)} type="password" className={inputCls} />
             </div>
             <div>
-              <label className="block text-sm text-ink-2 mb-1">Label</label>
-              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Production Lark" className={inputCls} />
+              <label className="block text-sm text-ink-2 mb-1">{t("dashboard.addDialog.labelLabel")}</label>
+              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t("dashboard.addDialog.labelPlaceholder")} className={inputCls} />
             </div>
             <div className="flex gap-2 justify-end pt-2">
-              <button onClick={onClose} className="px-4 py-2 text-sm text-ink-2 hover:text-ink transition-colors">Cancel</button>
+              <button onClick={onClose} className="px-4 py-2 text-sm text-ink-2 hover:text-ink transition-colors">{t("common.cancel")}</button>
               <button
                 onClick={() => { onAdd(url, token || undefined, label || undefined); onClose(); }}
                 className="px-4 py-2 text-sm bg-brand hover:bg-brand-light rounded-card text-white font-semibold shadow-glow-brand transition-colors"
                 disabled={!url}
               >
-                Add
+                {t("common.add")}
               </button>
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-xs text-ink-3">Add an SSH host, auto-scan for OpenClaw instances. Install from Settings if not found.</p>
+            <p className="text-xs text-ink-3">{t("dashboard.addDialog.sshHostHint")}</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-ink-2 mb-1">Label</label>
+                <label className="block text-xs text-ink-2 mb-1">{t("dashboard.addDialog.labelHostLabel")}</label>
                 <input value={hostLabel} onChange={(e) => setHostLabel(e.target.value)} placeholder="Production Server" className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs text-ink-2 mb-1">Host</label>
+                <label className="block text-xs text-ink-2 mb-1">{t("dashboard.addDialog.hostLabel")}</label>
                 <input value={hostAddr} onChange={(e) => setHostAddr(e.target.value)} placeholder="192.168.1.100" className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs text-ink-2 mb-1">Port</label>
+                <label className="block text-xs text-ink-2 mb-1">{t("dashboard.addDialog.portLabel")}</label>
                 <input value={hostPort} onChange={(e) => setHostPort(e.target.value)} className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs text-ink-2 mb-1">Username</label>
+                <label className="block text-xs text-ink-2 mb-1">{t("dashboard.addDialog.usernameLabel")}</label>
                 <input value={hostUser} onChange={(e) => setHostUser(e.target.value)} placeholder="ubuntu" className={inputCls} />
               </div>
             </div>
             <div>
-              <label className="block text-xs text-ink-2 mb-1">Auth Method</label>
+              <label className="block text-xs text-ink-2 mb-1">{t("dashboard.addDialog.authMethodLabel")}</label>
               <select value={hostAuth} onChange={(e) => setHostAuth(e.target.value as "password" | "privateKey")} className={inputCls}>
-                <option value="password">Password</option>
-                <option value="privateKey">Private Key (paste content)</option>
+                <option value="password">{t("dashboard.addDialog.passwordOption")}</option>
+                <option value="privateKey">{t("dashboard.addDialog.privateKeyOption")}</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs text-ink-2 mb-1">{hostAuth === "password" ? "Password" : "Private Key"}</label>
+              <label className="block text-xs text-ink-2 mb-1">{hostAuth === "password" ? t("dashboard.addDialog.passwordLabel") : t("dashboard.addDialog.privateKeyLabel")}</label>
               {hostAuth === "password"
                 ? <input type="password" value={hostCred} onChange={(e) => setHostCred(e.target.value)} className={inputCls} />
                 : <textarea value={hostCred} onChange={(e) => setHostCred(e.target.value)} rows={3} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" className={`${inputCls} font-mono`} />
@@ -352,17 +356,17 @@ function AddInstanceDialog({ onClose, onAdd, isAdmin }: { onClose: () => void; o
             <div className="flex gap-2 justify-end pt-2">
               {hostDone ? (
                 <button onClick={onClose} className="px-4 py-2 text-sm bg-brand hover:bg-brand-light rounded-card text-white font-semibold shadow-glow-brand transition-colors">
-                  Close
+                  {t("common.close")}
                 </button>
               ) : (
                 <>
-                  <button onClick={onClose} className="px-4 py-2 text-sm text-ink-2 hover:text-ink transition-colors">Cancel</button>
+                  <button onClick={onClose} className="px-4 py-2 text-sm text-ink-2 hover:text-ink transition-colors">{t("common.cancel")}</button>
                   <button
                     onClick={addHost}
                     className="px-4 py-2 text-sm bg-brand hover:bg-brand-light rounded-card text-white font-semibold shadow-glow-brand transition-colors"
                     disabled={!hostAddr || !hostUser || !hostCred || hostBusy}
                   >
-                    {hostBusy ? "Adding..." : "Add & Scan"}
+                    {hostBusy ? t("dashboard.addDialog.adding") : t("dashboard.addDialog.addAndScan")}
                   </button>
                 </>
               )}
@@ -387,7 +391,7 @@ function groupByHost(instances: InstanceInfo[]): { hostKey: string; hostLabel: s
     // Connection labels are "hostLabel/profile" — extract host part
     const connLabel = insts[0]?.connection.label || "";
     const slashIdx = connLabel.indexOf("/");
-    const hostLabel = hostKey === "local" ? "Local" : (slashIdx > 0 ? connLabel.slice(0, slashIdx) : hostKey);
+    const hostLabel = hostKey === "local" ? "_local_" : (slashIdx > 0 ? connLabel.slice(0, slashIdx) : hostKey);
     return { hostKey, hostLabel, instances: insts };
   });
 }
@@ -442,19 +446,20 @@ async function streamInstallSSE(
 }
 
 const STEP_ICON: Record<string, string> = {
-  running: "⏳",
-  done: "✅",
-  error: "❌",
-  skipped: "⏭️",
+  running: "\u23F3",
+  done: "\u2705",
+  error: "\u274C",
+  skipped: "\u23ED\uFE0F",
 };
 
 function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: () => void }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [steps, setSteps] = useState<InstallStep[]>([]);
   const [result, setResult] = useState<"success" | "error" | null>(null);
   const [versionOptions, setVersionOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [selectedVersion, setSelectedVersion] = useState("");
-  // "checking" → loading, "not_installed" → show install, "installed" → show init gateway
+  // "checking" -> loading, "not_installed" -> show install, "installed" -> show init gateway
   const [hostStatus, setHostStatus] = useState<"checking" | "not_installed" | "installed">("checking");
   const [installedVersion, setInstalledVersion] = useState<string>("");
   // Init gateway form
@@ -499,15 +504,16 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
   }, []);
 
   const pollInstallStatus = async () => {
-    setSteps((prev) => [...prev, { step: "Connection lost, checking remote status...", status: "running" }]);
+    const connLostMsg = t("dashboard.emptyHost.connectionLostChecking");
+    setSteps((prev) => [...prev, { step: connLostMsg, status: "running" }]);
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       try {
         const st = await get<{ status: string; version?: string }>(`/lifecycle/host/${host.id}/install-status`);
         if (st.status === "installed") {
           setSteps((prev) => {
-            const next = prev.filter((s) => s.step !== "Connection lost, checking remote status...");
-            return [...next, { step: "Install completed on remote", status: "done", detail: st.version ? `v${st.version}` : undefined }];
+            const next = prev.filter((s) => s.step !== connLostMsg);
+            return [...next, { step: t("dashboard.emptyHost.installCompletedOnRemote"), status: "done", detail: st.version ? `v${st.version}` : undefined }];
           });
           setHostStatus("installed");
           setInstalledVersion(st.version || "");
@@ -516,7 +522,7 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
         }
         if (st.status === "not_installed") {
           setSteps((prev) => prev.map((s) =>
-            s.step === "Connection lost, checking remote status..." ? { ...s, status: "error" as const, detail: "Install process ended without success" } : s
+            s.step === connLostMsg ? { ...s, status: "error" as const, detail: t("dashboard.emptyHost.installEndedWithoutSuccess") } : s
           ));
           setResult("error"); setBusy(false);
           return;
@@ -524,7 +530,7 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
       } catch { /* keep trying */ }
     }
     setSteps((prev) => prev.map((s) =>
-      s.step === "Connection lost, checking remote status..." ? { ...s, status: "error" as const, detail: "Timed out, please check manually" } : s
+      s.step === connLostMsg ? { ...s, status: "error" as const, detail: t("dashboard.emptyHost.timedOutCheckManually") } : s
     ));
     setResult("error"); setBusy(false);
   };
@@ -541,14 +547,15 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
       }),
       async (success) => {
         if (success) {
-          setSteps((prev) => [...prev, { step: "Scanning instances...", status: "running" }]);
+          const scanMsg = t("dashboard.emptyHost.scanningInstances");
+          setSteps((prev) => [...prev, { step: scanMsg, status: "running" }]);
           // After install, check if gateway is already running (might auto-start)
           try {
             const scan = await post<{ discovered: number }>(`/hosts/${host.id}/scan`, {});
             setSteps((prev) => {
               const next = [...prev];
-              const idx = next.findIndex((s) => s.step === "Scanning instances...");
-              if (idx >= 0) next[idx] = { step: "Scanning instances...", status: "done" };
+              const idx = next.findIndex((s) => s.step === scanMsg);
+              if (idx >= 0) next[idx] = { step: scanMsg, status: "done" };
               return next;
             });
             if (scan.discovered > 0) {
@@ -557,7 +564,7 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
               return;
             }
           } catch { /* ignore */ }
-          // Installed but no running gateway → switch to init form
+          // Installed but no running gateway -> switch to init form
           setHostStatus("installed");
           setInstalledVersion(selectedVersion);
           setResult(null); setBusy(false);
@@ -580,7 +587,7 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
         token: gwToken || undefined,
         profile: gwProfile || undefined,
       });
-      setInitMsg("Gateway started! Scanning...");
+      setInitMsg(t("dashboard.emptyHost.gatewayStartedScanning"));
       await post(`/hosts/${host.id}/scan`, {});
       onInstalled();
     } catch (e: any) {
@@ -626,7 +633,7 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
           onClick={rescan}
           disabled={rescanning}
           className="ml-auto text-ink-3 hover:text-ink transition-colors disabled:opacity-50"
-          title="Rescan host"
+          title={t("dashboard.emptyHost.rescanHost")}
         >
           <RefreshCw size={14} className={rescanning ? "animate-spin" : ""} />
         </button>
@@ -640,24 +647,24 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
             <div key={i} className="flex items-start gap-1.5 text-xs">
               <span className="shrink-0">{STEP_ICON[s.status]}</span>
               <span className={s.status === "error" ? "text-danger" : s.status === "done" ? "text-ok" : "text-ink-2"}>
-                {s.step}{s.detail ? ` — ${s.detail}` : ""}
+                {s.step}{s.detail ? ` \u2014 ${s.detail}` : ""}
               </span>
             </div>
           ))}
         </div>
       )}
       {result === "error" && (
-        <p className="text-xs text-danger mb-2">Installation failed. Check server logs or try again.</p>
+        <p className="text-xs text-danger mb-2">{t("dashboard.emptyHost.installFailed")}</p>
       )}
 
       {hostStatus === "checking" && (
-        <p className="text-xs text-ink-3 mb-3">Checking host status...</p>
+        <p className="text-xs text-ink-3 mb-3">{t("dashboard.emptyHost.checkingHostStatus")}</p>
       )}
 
-      {/* State: Not installed → show install UI */}
+      {/* State: Not installed -> show install UI */}
       {hostStatus === "not_installed" && !busy && result !== "success" && (
         <div className="space-y-2">
-          <p className="text-xs text-warn">OpenClaw not installed</p>
+          <p className="text-xs text-warn">{t("dashboard.emptyHost.openclawNotInstalled")}</p>
           {versionOptions.length > 0 && (
             <select value={selectedVersion} onChange={(e) => setSelectedVersion(e.target.value)} className={inputCls}>
               {versionOptions.map((opt) => (
@@ -667,35 +674,35 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
           )}
           <button onClick={install} disabled={busy}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
-            <Download size={14} /> Install OpenClaw
+            <Download size={14} /> {t("dashboard.emptyHost.installOpenclaw")}
           </button>
         </div>
       )}
 
-      {/* State: Installed but no gateway → show init form */}
+      {/* State: Installed but no gateway -> show init form */}
       {hostStatus === "installed" && !busy && result !== "success" && (
         <div className="space-y-2">
-          <p className="text-xs text-cyan">OpenClaw installed, no gateway running</p>
+          <p className="text-xs text-cyan">{t("dashboard.emptyHost.openclawInstalledNoGateway")}</p>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-ink-3 mb-0.5">Port</label>
+              <label className="block text-xs text-ink-3 mb-0.5">{t("dashboard.emptyHost.portLabel")}</label>
               <input value={gwPort} onChange={(e) => setGwPort(e.target.value)} placeholder="18789" className={inputCls} />
             </div>
             <div>
-              <label className="block text-xs text-ink-3 mb-0.5">Profile</label>
+              <label className="block text-xs text-ink-3 mb-0.5">{t("dashboard.emptyHost.profileLabel")}</label>
               <input value={gwProfile} onChange={(e) => setGwProfile(e.target.value)} placeholder="default" className={inputCls} />
             </div>
           </div>
           <div>
-            <label className="block text-xs text-ink-3 mb-0.5">Token (optional)</label>
-            <input value={gwToken} onChange={(e) => setGwToken(e.target.value)} type="password" placeholder="Gateway auth token" className={inputCls} />
+            <label className="block text-xs text-ink-3 mb-0.5">{t("dashboard.emptyHost.tokenOptionalLabel")}</label>
+            <input value={gwToken} onChange={(e) => setGwToken(e.target.value)} type="password" placeholder={t("dashboard.emptyHost.gatewayAuthTokenPlaceholder")} className={inputCls} />
           </div>
           {initMsg && (
             <p className={`text-xs ${initMsg.startsWith("Error") ? "text-danger" : "text-ok"}`}>{initMsg}</p>
           )}
           <button onClick={initGateway} disabled={busy}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-ok/10 hover:bg-ok/20 text-ok rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
-            <Play size={14} /> Initialize Gateway
+            <Play size={14} /> {t("dashboard.emptyHost.initializeGateway")}
           </button>
         </div>
       )}
@@ -704,10 +711,13 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
 }
 
 function InstancesByHost({ instances, emptyHosts, refresh }: { instances: InstanceInfo[]; emptyHosts: RemoteHost[]; refresh: () => void }) {
+  const { t } = useTranslation();
   const groups = groupByHost(instances);
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
   const filtered = selectedHost ? groups.filter((g) => g.hostKey === selectedHost) : groups;
   const showEmptyHosts = !selectedHost || selectedHost === "empty-hosts";
+
+  const displayHostLabel = (label: string) => label === "_local_" ? t("dashboard.local") : label;
 
   return (
     <div>
@@ -717,7 +727,7 @@ function InstancesByHost({ instances, emptyHosts, refresh }: { instances: Instan
             onClick={() => setSelectedHost(null)}
             className={`px-3 py-1 rounded text-xs font-medium ${!selectedHost ? "bg-s3 text-ink" : "bg-s2 text-ink-3 hover:text-ink"}`}
           >
-            All ({instances.length + emptyHosts.length})
+            {t("dashboard.allCount", { n: instances.length + emptyHosts.length })}
           </button>
           {groups.map((g) => (
             <button
@@ -725,7 +735,7 @@ function InstancesByHost({ instances, emptyHosts, refresh }: { instances: Instan
               onClick={() => setSelectedHost(g.hostKey)}
               className={`px-3 py-1 rounded text-xs font-medium ${selectedHost === g.hostKey ? "bg-s3 text-ink" : "bg-s2 text-ink-3 hover:text-ink"}`}
             >
-              {g.hostLabel} ({g.instances.length})
+              {displayHostLabel(g.hostLabel)} ({g.instances.length})
             </button>
           ))}
           {emptyHosts.length > 0 && (
@@ -733,7 +743,7 @@ function InstancesByHost({ instances, emptyHosts, refresh }: { instances: Instan
               onClick={() => setSelectedHost("empty-hosts")}
               className={`px-3 py-1 rounded text-xs font-medium ${selectedHost === "empty-hosts" ? "bg-s3 text-ink" : "bg-warn/20 text-warn hover:bg-warn/30"}`}
             >
-              Not Installed ({emptyHosts.length})
+              {t("dashboard.notInstalled")} ({emptyHosts.length})
             </button>
           )}
         </div>
@@ -741,7 +751,7 @@ function InstancesByHost({ instances, emptyHosts, refresh }: { instances: Instan
       <div className="space-y-6">
         {filtered.map((g) => (
           <div key={g.hostKey}>
-            <h2 className="text-sm text-ink-3 uppercase tracking-wide mb-3">{g.hostLabel} — {g.instances.length} instance{g.instances.length !== 1 ? "s" : ""}</h2>
+            <h2 className="text-sm text-ink-3 uppercase tracking-wide mb-3">{displayHostLabel(g.hostLabel)} — {g.instances.length} {t("dashboard.instance", { count: g.instances.length })}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {g.instances.map((inst) => (
                 <InstanceCard key={inst.id} inst={inst} onRefresh={() => post(`/instances/${inst.id}/refresh`).then(refresh)} />
@@ -751,7 +761,7 @@ function InstancesByHost({ instances, emptyHosts, refresh }: { instances: Instan
         ))}
         {showEmptyHosts && emptyHosts.length > 0 && (
           <div>
-            <h2 className="text-sm text-warn uppercase tracking-wide mb-3">Awaiting Installation — {emptyHosts.length} host{emptyHosts.length !== 1 ? "s" : ""}</h2>
+            <h2 className="text-sm text-warn uppercase tracking-wide mb-3">{t("dashboard.awaitingInstallation")} — {emptyHosts.length} {t("dashboard.host", { count: emptyHosts.length })}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {emptyHosts.map((h) => (
                 <EmptyHostCard key={h.id} host={h} onInstalled={refresh} />
@@ -765,6 +775,7 @@ function InstancesByHost({ instances, emptyHosts, refresh }: { instances: Instan
 }
 
 export function Dashboard() {
+  const { t } = useTranslation();
   const { instances, loading, refresh, addInstance } = useInstances();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -793,7 +804,7 @@ export function Dashboard() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-ink">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-ink">{t("dashboard.title")}</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowTopo(!showTopo)}
@@ -801,23 +812,23 @@ export function Dashboard() {
               showTopo ? "bg-brand text-white" : "bg-s2 text-ink-2 hover:text-ink border border-edge"
             }`}
           >
-            Topology
+            {t("dashboard.topology")}
           </button>
           <button
             onClick={() => setShowAdd(true)}
             className="px-4 py-2 bg-brand hover:bg-brand-light rounded-card text-sm text-white font-semibold shadow-glow-brand transition-colors"
           >
-            <Plus size={16} className="inline" /> Add Instance
+            <Plus size={16} className="inline" /> {t("dashboard.addInstance")}
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
-          { label: "Instances", value: instances.length },
-          { label: "Active Sessions", value: totalSessions },
-          { label: "Agents", value: totalAgents },
-          { label: "Critical Issues", value: criticalIssues, color: criticalIssues > 0 ? "text-danger" : undefined },
+          { label: t("dashboard.instances"), value: instances.length },
+          { label: t("dashboard.activeSessions"), value: totalSessions },
+          { label: t("dashboard.agents"), value: totalAgents },
+          { label: t("dashboard.criticalIssues"), value: criticalIssues, color: criticalIssues > 0 ? "text-danger" : undefined },
         ].map((stat) => (
           <div key={stat.label} className="bg-s1 border border-edge rounded-card p-4 shadow-card">
             <p className="text-sm text-ink-2">{stat.label}</p>
@@ -829,11 +840,11 @@ export function Dashboard() {
       {showTopo && <div className="mb-6"><TopologyView instances={instances} /></div>}
 
       {loading ? (
-        <p className="text-ink-3">Loading instances...</p>
+        <p className="text-ink-3">{t("dashboard.loadingInstances")}</p>
       ) : instances.length === 0 && emptyHosts.length === 0 ? (
         <div className="text-center py-12 text-ink-3">
-          <p className="text-lg mb-2">No instances found</p>
-          <p className="text-sm">Add a remote instance or ensure OpenClaw is running locally</p>
+          <p className="text-lg mb-2">{t("dashboard.noInstancesFound")}</p>
+          <p className="text-sm">{t("dashboard.noInstancesHint")}</p>
         </div>
       ) : (
         <InstancesByHost instances={instances} emptyHosts={emptyHosts} refresh={refresh} />

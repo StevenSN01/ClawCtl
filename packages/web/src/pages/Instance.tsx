@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { ChevronLeft, RefreshCw, ArrowUpDown, Play, Square, RotateCcw, Download, ArrowUpCircle, Save, Terminal, Camera, GitCompare, Trash2, Users, Plus, Radio, LogOut, Search } from "lucide-react";
 import { useInstances, type InstanceInfo } from "../hooks/useInstances";
@@ -27,16 +28,17 @@ function StatusDot({ status }: { status: string }) {
 type Tab = "overview" | "sessions" | "config" | "security" | "agents" | "channels" | "llm" | "control";
 
 function OverviewTab({ inst, onSwitchTab }: { inst: InstanceInfo; onSwitchTab: (tab: Tab) => void }) {
-  const totalTokens = inst.sessions.reduce((t, s) => t + (s.totalTokens || 0), 0);
+  const { t } = useTranslation();
+  const totalTokens = inst.sessions.reduce((acc, s) => acc + (s.totalTokens || 0), 0);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Agents", value: inst.agents.length },
-          { label: "Sessions", value: inst.sessions.length },
-          { label: "Total Tokens", value: totalTokens.toLocaleString() },
-          { label: "Channels", value: inst.channels.length },
+          { label: t("instance.overview.agents"), value: inst.agents.length },
+          { label: t("instance.overview.sessions"), value: inst.sessions.length },
+          { label: t("instance.overview.totalTokens"), value: totalTokens.toLocaleString() },
+          { label: t("instance.overview.channels"), value: inst.channels.length },
         ].map((s) => (
           <div key={s.label} className="bg-s1 border border-edge rounded-card p-4 shadow-card">
             <p className="text-sm text-ink-2">{s.label}</p>
@@ -46,15 +48,15 @@ function OverviewTab({ inst, onSwitchTab }: { inst: InstanceInfo; onSwitchTab: (
       </div>
 
       <div className="bg-s1 border border-edge rounded-card overflow-hidden shadow-card">
-        <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">Agents</h3>
+        <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">{t("instance.overview.agents")}</h3>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-edge text-ink-2">
-              <th className="text-left p-3">ID</th>
-              <th className="text-left p-3">Name</th>
-              <th className="text-left p-3">Model</th>
-              <th className="text-left p-3">Thinking</th>
-              <th className="text-left p-3">Default</th>
+              <th className="text-left p-3">{t("instance.overview.agentsTable.idHeader")}</th>
+              <th className="text-left p-3">{t("instance.overview.agentsTable.nameHeader")}</th>
+              <th className="text-left p-3">{t("instance.overview.agentsTable.modelHeader")}</th>
+              <th className="text-left p-3">{t("instance.overview.agentsTable.thinkingHeader")}</th>
+              <th className="text-left p-3">{t("instance.overview.agentsTable.defaultHeader")}</th>
             </tr>
           </thead>
           <tbody>
@@ -73,16 +75,16 @@ function OverviewTab({ inst, onSwitchTab }: { inst: InstanceInfo; onSwitchTab: (
 
       {/* Channels summary card */}
       <div className="bg-s1 border border-edge rounded-card overflow-hidden shadow-card">
-        <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">Channels</h3>
+        <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">{t("instance.overview.channels")}</h3>
         <button
           onClick={() => onSwitchTab("channels")}
           className="w-full text-left p-4 hover:bg-s2/50 transition-colors"
         >
           <div className="text-sm text-ink">
             {inst.channels.length} channel{inst.channels.length !== 1 ? "s" : ""},{" "}
-            <span className="text-ok">{inst.channels.filter((c) => c.running).length} running</span>
+            <span className="text-ok">{inst.channels.filter((c) => c.running).length} {t("channels.running")}</span>
           </div>
-          <div className="text-xs text-ink-3 mt-1">Click to manage channels →</div>
+          <div className="text-xs text-ink-3 mt-1">{t("channels.clickToManage")}</div>
         </button>
       </div>
     </div>
@@ -90,6 +92,7 @@ function OverviewTab({ inst, onSwitchTab }: { inst: InstanceInfo; onSwitchTab: (
 }
 
 function SessionsTab({ inst }: { inst: InstanceInfo }) {
+  const { t } = useTranslation();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
@@ -125,14 +128,14 @@ function SessionsTab({ inst }: { inst: InstanceInfo }) {
     <div className="flex gap-4 h-[calc(100vh-220px)]">
       <div className="w-1/3 flex flex-col min-w-0">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-ink-3">{sessions.length} sessions</span>
+          <span className="text-sm text-ink-3">{sessions.length} {t("common.sessions")}</span>
           <button
             onClick={() => setSortAsc(!sortAsc)}
             className="flex items-center gap-1 text-xs text-ink-3 hover:text-ink px-1.5 py-0.5 rounded bg-s2"
-            title={sortAsc ? "Oldest first" : "Newest first"}
+            title={sortAsc ? t("sessions.oldestFirst") : t("sessions.newestFirst")}
           >
             <ArrowUpDown size={12} />
-            {sortAsc ? "Old" : "New"}
+            {sortAsc ? t("common.old") : t("common.new")}
           </button>
         </div>
         <div className="flex-1 overflow-auto space-y-1">
@@ -155,10 +158,10 @@ function SessionsTab({ inst }: { inst: InstanceInfo }) {
           {sessions.length === 0 && (
             inst.connection.status !== "connected" ? (
               <div className="flex items-center justify-center py-8 text-ink-3 text-sm">
-                <RefreshCw size={14} className="animate-spin mr-2" /> Waiting for connection...
+                <RefreshCw size={14} className="animate-spin mr-2" /> {t("instance.sessionsList.waitingForConnection")}
               </div>
             ) : (
-              <p className="text-center py-8 text-ink-3 text-sm">No sessions</p>
+              <p className="text-center py-8 text-ink-3 text-sm">{t("instance.sessionsList.noSessions")}</p>
             )
           )}
         </div>
@@ -167,24 +170,24 @@ function SessionsTab({ inst }: { inst: InstanceInfo }) {
         {selectedKey ? (
           <>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-ink-3">{messages.length} message{messages.length !== 1 ? "s" : ""}</span>
+              <span className="text-xs text-ink-3">{messages.length} {t("instance.sessionsList.message")}{messages.length !== 1 ? "s" : ""}</span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setMsgReverse(!msgReverse)}
                   className="flex items-center gap-1 text-xs text-ink-3 hover:text-ink px-1.5 py-0.5 rounded bg-s2"
                 >
                   <ArrowUpDown size={12} />
-                  {msgReverse ? "New" : "Old"}
+                  {msgReverse ? t("common.new") : t("common.old")}
                 </button>
                 {hasMore && (
                   <button onClick={loadMore} className="px-2 py-1 text-xs bg-s3 hover:bg-edge-hi rounded">
-                    Load more
+                    {t("common.loadMore")}
                   </button>
                 )}
               </div>
             </div>
             {loadingMsgs ? (
-              <div className="flex-1 flex items-center justify-center text-ink-3">Loading messages...</div>
+              <div className="flex-1 flex items-center justify-center text-ink-3">{t("sessions.loadingMessages")}</div>
             ) : (
             <div className="flex-1 overflow-auto space-y-3">
               {(msgReverse ? [...messages].reverse() : messages).map((msg, i) => (
@@ -197,7 +200,7 @@ function SessionsTab({ inst }: { inst: InstanceInfo }) {
             )}
           </>
         ) : (
-          <div className="flex items-center justify-center h-full text-ink-3">Select a session</div>
+          <div className="flex items-center justify-center h-full text-ink-3">{t("instance.sessionsList.selectSession")}</div>
         )}
       </div>
     </div>
@@ -205,16 +208,17 @@ function SessionsTab({ inst }: { inst: InstanceInfo }) {
 }
 
 function ConfigTab({ inst }: { inst: InstanceInfo }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-6">
       <div className="bg-s1 border border-edge rounded-card shadow-card">
-        <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">Configuration</h3>
+        <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">{t("instance.configView.configuration")}</h3>
         <pre className="p-4 text-xs overflow-auto max-h-[600px] bg-s2 rounded-card m-4">{JSON.stringify(inst.config, null, 2)}</pre>
       </div>
 
       {inst.skills.length > 0 && (
         <div className="bg-s1 border border-edge rounded-card overflow-hidden shadow-card">
-          <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">Skills ({inst.skills.length})</h3>
+          <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">{t("instance.configView.skills")} ({inst.skills.length})</h3>
           <div className="p-4 flex gap-2 flex-wrap">
             {[...inst.skills].sort((a, b) => (a.status === "ready" ? 0 : 1) - (b.status === "ready" ? 0 : 1) || a.name.localeCompare(b.name)).map((sk) => (
               <span key={sk.name} className={`px-2 py-1 rounded text-xs ${sk.status === "ready" ? "bg-ok-dim text-ok" : "bg-s2 text-ink-3"}`}>
@@ -229,6 +233,7 @@ function ConfigTab({ inst }: { inst: InstanceInfo }) {
 }
 
 function SecurityTab({ inst }: { inst: InstanceInfo }) {
+  const { t } = useTranslation();
   const issues = inst.securityAudit || [];
   const config = (inst.config as any)?.parsed || inst.config as any;
 
@@ -255,7 +260,7 @@ function SecurityTab({ inst }: { inst: InstanceInfo }) {
     <div className="space-y-6">
       {issues.length > 0 ? (
         <div className="bg-s1 border border-edge rounded-card shadow-card">
-          <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">Audit Items</h3>
+          <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">{t("instance.securityView.auditItems")}</h3>
           <div className="divide-y divide-edge">
             {issues.map((item, i) => (
               <div key={i} className="p-4 flex items-start gap-2">
@@ -274,19 +279,19 @@ function SecurityTab({ inst }: { inst: InstanceInfo }) {
         </div>
       ) : (
         <div className="bg-ok-dim border border-ok/30 rounded-card p-4 text-ok text-sm">
-          No security audit issues detected
+          {t("instance.securityView.noAuditIssues")}
         </div>
       )}
 
       <div className="bg-s1 border border-edge rounded-card overflow-hidden shadow-card">
-        <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">Agent Permissions</h3>
+        <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">{t("instance.securityView.agentPermissions")}</h3>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-edge text-ink-2">
-              <th className="text-left p-3">Agent</th>
-              <th className="text-left p-3">Allowed Tools</th>
-              <th className="text-left p-3">Exec Security</th>
-              <th className="text-left p-3">Risk</th>
+              <th className="text-left p-3">{t("security.agentHeader")}</th>
+              <th className="text-left p-3">{t("security.allowedTools")}</th>
+              <th className="text-left p-3">{t("security.execSecurity")}</th>
+              <th className="text-left p-3">{t("security.riskHeader")}</th>
             </tr>
           </thead>
           <tbody>
@@ -294,7 +299,7 @@ function SecurityTab({ inst }: { inst: InstanceInfo }) {
               const tools = a.toolsAllow || [];
               const exec = a.execSecurity;
               const hasAll = tools.includes("*") || tools.length === 0;
-              const hasExec = hasAll || tools.some((t) => ["exec", "shell", "bash"].includes(t));
+              const hasExec = hasAll || tools.some((tool) => ["exec", "shell", "bash"].includes(tool));
               const isFullExec = hasExec && (!exec || exec.security === "full");
               const risk = isFullExec ? "high" : hasExec ? "medium" : tools.length > 10 ? "medium" : "low";
               return (
@@ -327,14 +332,14 @@ function SecurityTab({ inst }: { inst: InstanceInfo }) {
 
       {channelPolicies.length > 0 && (
         <div className="bg-s1 border border-edge rounded-card overflow-hidden shadow-card">
-          <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">Channel Policies</h3>
+          <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">{t("instance.securityView.channelPolicies")}</h3>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-edge text-ink-2">
-                <th className="text-left p-3">Channel</th>
-                <th className="text-left p-3">Account</th>
-                <th className="text-left p-3">Policy</th>
-                <th className="text-left p-3">Value</th>
+                <th className="text-left p-3">{t("security.channelHeader")}</th>
+                <th className="text-left p-3">{t("security.accountHeader")}</th>
+                <th className="text-left p-3">{t("security.policyHeader")}</th>
+                <th className="text-left p-3">{t("security.valueHeader")}</th>
               </tr>
             </thead>
             <tbody>
@@ -362,14 +367,14 @@ function SecurityTab({ inst }: { inst: InstanceInfo }) {
 
       {bindings.length > 0 && (
         <div className="bg-s1 border border-edge rounded-card overflow-hidden shadow-card">
-          <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">Agent Bindings</h3>
+          <h3 className="text-lg font-semibold p-4 border-b border-edge text-ink">{t("instance.securityView.agentBindings")}</h3>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-edge text-ink-2">
-                <th className="text-left p-3">Agent</th>
-                <th className="text-left p-3">Channel</th>
-                <th className="text-left p-3">Account</th>
-                <th className="text-left p-3">Match</th>
+                <th className="text-left p-3">{t("security.agentHeader")}</th>
+                <th className="text-left p-3">{t("security.channelHeader")}</th>
+                <th className="text-left p-3">{t("security.accountHeader")}</th>
+                <th className="text-left p-3">{t("security.matchHeader")}</th>
               </tr>
             </thead>
             <tbody>
@@ -392,6 +397,7 @@ function SecurityTab({ inst }: { inst: InstanceInfo }) {
 }
 
 function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentId?: string }) {
+  const { t } = useTranslation();
   const [models, setModels] = useState<string[]>([]);
   const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
   const [defaultModel, setDefaultModel] = useState("");
@@ -468,12 +474,12 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
 
   const saveAll = async () => {
     if (isNew && agents.some((a) => !a.id)) {
-      setError("Agent ID is required");
+      setError(t("instance.agents.agentIdRequired"));
       return;
     }
     const ids = agents.map((a) => a.id);
     if (new Set(ids).size !== ids.length) {
-      setError("Duplicate agent IDs detected");
+      setError(t("instance.agents.duplicateIds"));
       return;
     }
     setBusy(true);
@@ -522,7 +528,7 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20 text-ink-3 text-sm">
-        <RefreshCw size={16} className="animate-spin mr-2" /> Loading agent config from remote...
+        <RefreshCw size={16} className="animate-spin mr-2" /> {t("instance.agents.loadingAgentConfig")}
       </div>
     );
   }
@@ -532,11 +538,11 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
       {/* Global Defaults */}
       <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
         <h3 className="text-sm font-semibold text-ink-2 mb-3 flex items-center gap-2">
-          <Users size={16} /> Global Defaults
+          <Users size={16} /> {t("instance.agents.globalDefaults")}
         </h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs text-ink-3 mb-1">Default Model</label>
+            <label className="block text-xs text-ink-3 mb-1">{t("instance.agents.defaultModel")}</label>
             <input
               value={defaultModel}
               onChange={(e) => setDefaultModel(e.target.value)}
@@ -544,11 +550,11 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
             />
           </div>
           <div>
-            <label className="block text-xs text-ink-3 mb-1">Default Thinking</label>
+            <label className="block text-xs text-ink-3 mb-1">{t("instance.agents.defaultThinking")}</label>
             <input
               value={defaultThinking}
               onChange={(e) => setDefaultThinking(e.target.value)}
-              placeholder="e.g. on, off, 1024, budget_tokens..."
+              placeholder={t("agents.thinkingPlaceholder")}
               className="w-full px-3 py-2 text-sm bg-s2 border border-edge rounded text-ink placeholder:text-ink-3 focus:outline-none focus:border-cyan"
             />
           </div>
@@ -560,7 +566,7 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
         {/* Sidebar */}
         <div className="w-48 border-r border-edge">
           <div className="p-3 border-b border-edge flex items-center justify-between">
-            <span className="text-sm font-semibold text-ink-2">Agents</span>
+            <span className="text-sm font-semibold text-ink-2">{t("instance.agents.agentsLabel")}</span>
             <button onClick={addNewAgent} className="text-brand hover:text-brand-light"><Plus size={16} /></button>
           </div>
           <div className="divide-y divide-edge">
@@ -572,7 +578,7 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
                   selectedId === a.id ? "bg-brand/10 text-brand" : "text-ink hover:bg-s2"
                 }`}
               >
-                {a.id || "(new agent)"}
+                {a.id || t("instance.agents.newAgent")}
               </button>
             ))}
           </div>
@@ -598,14 +604,14 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
                   disabled={busy}
                   className="px-4 py-2 text-sm rounded bg-brand text-white hover:bg-brand-light disabled:opacity-40"
                 >
-                  {busy ? "Saving..." : "Save All"}
+                  {busy ? t("common.saving") : t("instance.agents.saveAll")}
                 </button>
                 {!isNew && (
                   <button
                     onClick={() => setShowDeleteConfirm(selected.id)}
                     className="flex items-center gap-1 px-3 py-2 text-sm text-danger hover:text-danger/80"
                   >
-                    <Trash2 size={14} /> Delete
+                    <Trash2 size={14} /> {t("common.delete")}
                   </button>
                 )}
                 {error && <span className="text-sm text-danger">{error}</span>}
@@ -613,7 +619,7 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
             </>
           ) : (
             <div className="flex items-center justify-center h-full text-ink-3 text-sm">
-              Select an agent or create a new one
+              {t("instance.agents.selectOrCreate")}
             </div>
           )}
         </div>
@@ -623,18 +629,18 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-s1 border border-edge rounded-card p-6 shadow-card max-w-sm w-full">
-            <h3 className="text-lg font-semibold text-ink mb-2">Delete Agent</h3>
+            <h3 className="text-lg font-semibold text-ink mb-2">{t("instance.agents.deleteAgent")}</h3>
             <p className="text-sm text-ink-2 mb-4">
-              Delete agent <strong>{showDeleteConfirm}</strong>? This will also remove associated bindings.
+              {t("instance.agents.deleteAgentConfirm", { id: showDeleteConfirm })}
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 text-sm text-ink-3 hover:text-ink">Cancel</button>
+              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 text-sm text-ink-3 hover:text-ink">{t("common.cancel")}</button>
               <button
                 onClick={() => deleteAgent(showDeleteConfirm)}
                 disabled={busy}
                 className="px-4 py-2 text-sm rounded bg-danger text-white hover:bg-danger/80 disabled:opacity-40"
               >
-                {busy ? "Deleting..." : "Delete"}
+                {busy ? t("common.deleting") : t("common.delete")}
               </button>
             </div>
           </div>
@@ -693,6 +699,7 @@ function detectPreset(name: string, baseUrl: string): string {
 }
 
 function LlmTab({ inst }: { inst: InstanceInfo }) {
+  const { t } = useTranslation();
   const [providers, setProviders] = useState<Record<string, any>>({});
   const [detectedProviders, setDetectedProviders] = useState<{ name: string; source: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -717,7 +724,7 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
       setProviders(r.providers || {});
       setDetectedProviders(r.detectedProviders || []);
     } catch (err: any) {
-      setMessage(`Error: ${err.message}`);
+      setMessage(`${t("common.error")}: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -731,10 +738,10 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
     try {
       await put(`/lifecycle/${inst.id}/providers`, { providers: next });
       setProviders(next);
-      setMessage("Saved");
+      setMessage(t("instance.llm.saved"));
       setTimeout(() => setMessage(null), 2000);
     } catch (err: any) {
-      setMessage(`Error: ${err.message}`);
+      setMessage(`${t("common.error")}: ${err.message}`);
     } finally {
       setSaving(false);
     }
@@ -814,7 +821,7 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
     await saveProviders(next);
   };
 
-  if (loading) return <div className="text-ink-3 py-8 text-center">Loading providers...</div>;
+  if (loading) return <div className="text-ink-3 py-8 text-center">{t("instance.llm.loadingProviders")}</div>;
 
   const providerNames = Object.keys(providers);
 
@@ -822,15 +829,15 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
     <div className="space-y-6">
       <div className="bg-s1 border border-edge rounded-card shadow-card">
         <div className="flex items-center justify-between p-4 border-b border-edge">
-          <h3 className="text-lg font-semibold text-ink">LLM Providers</h3>
+          <h3 className="text-lg font-semibold text-ink">{t("instance.llm.llmProviders")}</h3>
           <button onClick={startAdd} className="flex items-center gap-1 px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-sm">
-            <Plus size={14} /> Add Provider
+            <Plus size={14} /> {t("instance.llm.addProvider")}
           </button>
         </div>
 
         {providerNames.length === 0 && detectedProviders.length === 0 && !editing && (
           <div className="p-8 text-center text-ink-3 text-sm">
-            No LLM providers configured on this instance.
+            {t("instance.llm.noProviders")}
           </div>
         )}
 
@@ -857,11 +864,11 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                     </div>
                     <div className="text-xs text-ink-3 mt-1 flex gap-4">
                       <span className="truncate">{p.baseUrl || "—"}</span>
-                      <span>Key: {maskedKey}</span>
-                      <span>{(p.models || []).length} model{(p.models || []).length !== 1 ? "s" : ""}</span>
+                      <span>{t("instance.llm.key")} {maskedKey}</span>
+                      <span>{(p.models || []).length} {t("instance.llm.model")}{(p.models || []).length !== 1 ? "s" : ""}</span>
                     </div>
                   </div>
-                  <button onClick={() => startEdit(name)} className="text-xs text-cyan hover:text-cyan/80 px-2 py-1">Edit</button>
+                  <button onClick={() => startEdit(name)} className="text-xs text-cyan hover:text-cyan/80 px-2 py-1">{t("common.edit")}</button>
                   <button onClick={() => deleteProvider(name)} className="text-xs text-danger hover:text-danger/80 px-2 py-1">
                     <Trash2 size={14} />
                   </button>
@@ -876,10 +883,10 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-ink">{displayName}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-ok/20 text-ok">auto</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-ok/20 text-ok">{t("instance.llm.auto")}</span>
                     </div>
                     <div className="text-xs text-ink-3 mt-1">
-                      <code className="bg-s2 px-1 rounded">{dp.source}</code> — managed on server
+                      <code className="bg-s2 px-1 rounded">{dp.source}</code> — {t("instance.llm.managedOnServer")}
                     </div>
                   </div>
                 </div>
@@ -897,11 +904,11 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
       {editing && (
         <div className="bg-s1 border border-edge rounded-card shadow-card p-5">
           <h3 className="text-lg font-semibold text-ink mb-4">
-            {editOrigName ? `Edit: ${PROVIDER_PRESETS[editOrigName]?.label || editOrigName}` : "Add Provider"}
+            {editOrigName ? `${t("instance.llm.editPrefix")} ${PROVIDER_PRESETS[editOrigName]?.label || editOrigName}` : t("instance.llm.addProvider")}
           </h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-sm text-ink-2 mb-1">Provider</label>
+              <label className="block text-sm text-ink-2 mb-1">{t("instance.llm.providerLabel")}</label>
               <select
                 value={editing.preset}
                 onChange={(e) => applyPreset(e.target.value)}
@@ -916,19 +923,19 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
 
             {editing.preset === "custom" && (
               <div>
-                <label className="block text-sm text-ink-2 mb-1">Config Key</label>
+                <label className="block text-sm text-ink-2 mb-1">{t("instance.llm.configKeyLabel")}</label>
                 <input
                   value={editing.name}
                   onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                   placeholder="my-provider"
                   className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand"
                 />
-                <p className="text-[10px] text-ink-3 mt-1">Identifier used in openclaw.json models.providers</p>
+                <p className="text-[10px] text-ink-3 mt-1">{t("instance.llm.configKeyHint")}</p>
               </div>
             )}
 
             <div>
-              <label className="block text-sm text-ink-2 mb-1">Base URL</label>
+              <label className="block text-sm text-ink-2 mb-1">{t("instance.llm.baseUrlLabel")}</label>
               <input
                 value={editing.baseUrl}
                 onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })}
@@ -939,21 +946,21 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
 
             {editing.preset === "openai" && (
               <div>
-                <label className="block text-sm text-ink-2 mb-1">Authentication</label>
+                <label className="block text-sm text-ink-2 mb-1">{t("instance.llm.authenticationLabel")}</label>
                 <select
                   value={openaiAuthMode}
                   onChange={(e) => setOpenaiAuthMode(e.target.value as "apikey" | "oauth")}
                   className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink"
                 >
-                  <option value="apikey">API Key</option>
-                  <option value="oauth">OAuth (ChatGPT Plus/Pro)</option>
+                  <option value="apikey">{t("instance.llm.apiKeyOption")}</option>
+                  <option value="oauth">{t("instance.llm.oauthOption")}</option>
                 </select>
               </div>
             )}
 
             {editing.preset !== "ollama" && (editing.preset !== "openai" || openaiAuthMode === "apikey") && (
               <div>
-                <label className="block text-sm text-ink-2 mb-1">API Key</label>
+                <label className="block text-sm text-ink-2 mb-1">{t("instance.llm.apiKeyLabel")}</label>
                 <input
                   value={editing.apiKey}
                   onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })}
@@ -970,11 +977,11 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                   <div className="flex items-center gap-2">
                     <span className={`inline-block w-2 h-2 rounded-full ${oauthExpiry && oauthExpiry < Date.now() ? "bg-warn" : "bg-ok"}`} />
                     <span className="text-sm text-ink-2">
-                      {oauthExpiry && oauthExpiry < Date.now() ? "Token expired" : "OAuth connected"}
+                      {oauthExpiry && oauthExpiry < Date.now() ? t("instance.llm.tokenExpired") : t("instance.llm.oauthConnected")}
                     </span>
                     {oauthExpiry && (
                       <span className="text-[10px] text-ink-3 ml-auto">
-                        {oauthExpiry < Date.now() ? "Expired" : "Expires"}: {new Date(oauthExpiry).toLocaleString()}
+                        {oauthExpiry < Date.now() ? t("instance.llm.expired") : t("instance.llm.expires")}: {new Date(oauthExpiry).toLocaleString()}
                       </span>
                     )}
                   </div>
@@ -1003,7 +1010,7 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                                 setHasOAuthToken(true);
                                 setOauthExpiry(saveR.expiresAt || null);
                                 setOauthAuthUrl(null);
-                                setMessage("OpenAI OAuth configured");
+                                setMessage(t("instance.llm.openaiOauthConfigured"));
                                 await fetchProviders();
                               }
                             } else if (s.status === "error") {
@@ -1021,17 +1028,17 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                     }}
                     className="w-full px-4 py-2.5 bg-brand hover:bg-brand-light rounded-lg text-sm font-medium transition-colors"
                   >
-                    {hasOAuthToken ? "Re-authenticate with OpenAI" : "Login with OpenAI"}
+                    {hasOAuthToken ? t("instance.llm.reAuthOpenai") : t("instance.llm.loginWithOpenai")}
                   </button>
                 )}
 
                 {oauthStatus === "starting" && (
-                  <p className="text-sm text-ink-2 animate-pulse">Starting OAuth flow...</p>
+                  <p className="text-sm text-ink-2 animate-pulse">{t("instance.llm.startingOauth")}</p>
                 )}
 
                 {oauthStatus === "waiting" && (
                   <div className="space-y-3">
-                    <p className="text-sm text-ink-2">Open the authorization URL to sign in with OpenAI:</p>
+                    <p className="text-sm text-ink-2">{t("instance.llm.openAuthUrl")}</p>
                     {oauthAuthUrl && (
                       <div className="bg-s2 border border-edge rounded-lg p-2.5">
                         <p className="text-xs text-ink-3 font-mono break-all mb-2 select-all">{oauthAuthUrl}</p>
@@ -1040,18 +1047,18 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                             onClick={() => { navigator.clipboard.writeText(oauthAuthUrl); setMessage("URL copied"); }}
                             className="flex-1 px-3 py-1.5 bg-s1 border border-edge hover:border-brand rounded-lg text-xs text-ink-2 hover:text-ink transition-colors"
                           >
-                            Copy URL
+                            {t("instance.llm.copyUrl")}
                           </button>
                           <button
                             onClick={() => window.open(oauthAuthUrl, "_blank", "width=600,height=700")}
                             className="flex-1 px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs font-medium transition-colors"
                           >
-                            Open in Browser
+                            {t("instance.llm.openInBrowser")}
                           </button>
                         </div>
                       </div>
                     )}
-                    <p className="text-xs text-ink-3">Waiting for callback... After sign-in, paste the redirect URL below:</p>
+                    <p className="text-xs text-ink-3">{t("instance.llm.waitingCallback")}</p>
                     <div>
                       <div className="flex gap-2">
                         <input
@@ -1073,7 +1080,7 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                           disabled={!oauthManualUrl.trim()}
                           className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs disabled:opacity-50"
                         >
-                          Submit
+                          {t("common.submit")}
                         </button>
                       </div>
                     </div>
@@ -1081,17 +1088,17 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                 )}
 
                 {oauthStatus === "authenticating" && (
-                  <p className="text-sm text-ink-2 animate-pulse">Saving tokens to instance...</p>
+                  <p className="text-sm text-ink-2 animate-pulse">{t("instance.llm.savingTokens")}</p>
                 )}
 
                 {oauthStatus === "complete" && (
-                  <p className="text-sm text-ok">OpenAI OAuth configured successfully</p>
+                  <p className="text-sm text-ok">{t("instance.llm.oauthConfigured")}</p>
                 )}
 
                 {oauthError && <p className="text-sm text-danger">{oauthError}</p>}
 
                 <p className="text-[10px] text-ink-3">
-                  Uses OpenAI Codex OAuth for ChatGPT Plus/Pro subscriptions. Tokens saved to instance config.
+                  {t("instance.llm.oauthNote")}
                 </p>
               </div>
             )}
@@ -1099,16 +1106,16 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
             {/* Advanced options — auto-configured from preset, only show for override */}
             {editing.preset !== "custom" && !showAdvanced ? (
               <div className="flex items-center gap-3 text-xs text-ink-3">
-                <span>API: <code className="text-ink-2">{editing.api || "auto"}</code></span>
-                <span>Auth: <code className="text-ink-2">{editing.auth}</code></span>
+                <span>{t("instance.llm.apiTypeLabel")}: <code className="text-ink-2">{editing.api || t("instance.llm.autoDetect")}</code></span>
+                <span>{t("instance.llm.authModeLabel")}: <code className="text-ink-2">{editing.auth}</code></span>
                 <button onClick={() => setShowAdvanced(true)} className="text-ink-3 hover:text-ink underline underline-offset-2">
-                  Override
+                  {t("common.override")}
                 </button>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 p-3 bg-s2/50 border border-edge rounded-lg">
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Auth Mode</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("instance.llm.authModeLabel")}</label>
                   <select
                     value={editing.auth}
                     onChange={(e) => setEditing({ ...editing, auth: e.target.value })}
@@ -1118,13 +1125,13 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">API Type</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("instance.llm.apiTypeLabel")}</label>
                   <select
                     value={editing.api}
                     onChange={(e) => setEditing({ ...editing, api: e.target.value })}
                     className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink"
                   >
-                    <option value="">Auto-detect</option>
+                    <option value="">{t("instance.llm.autoDetect")}</option>
                     {API_TYPES.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
                 </div>
@@ -1133,7 +1140,7 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
 
             {editing.models.length > 0 && (
               <div>
-                <label className="block text-sm text-ink-2 mb-1">Models ({editing.models.length})</label>
+                <label className="block text-sm text-ink-2 mb-1">{t("instance.llm.modelsLabel")} ({editing.models.length})</label>
                 <div className="flex flex-wrap gap-1">
                   {editing.models.map((m: any, i: number) => (
                     <span key={i} className="px-2 py-0.5 rounded bg-s2 text-xs text-ink-2 font-mono">{m.id || m.name || `model-${i}`}</span>
@@ -1148,10 +1155,10 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                 disabled={saving || !editing.name.trim() || !editing.baseUrl.trim()}
                 className="px-4 py-2 bg-brand hover:bg-brand-light rounded-lg text-sm disabled:opacity-50"
               >
-                {saving ? "Saving..." : editOrigName ? "Update" : "Add"}
+                {saving ? t("common.saving") : editOrigName ? t("instance.llm.update") : t("common.add")}
               </button>
               <button onClick={() => { setEditing(null); setEditOrigName(null); }} className="px-4 py-2 text-sm text-ink-3 hover:text-ink">
-                Cancel
+                {t("common.cancel")}
               </button>
             </div>
           </div>
@@ -1162,6 +1169,7 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
 }
 
 function ControlTab({ inst }: { inst: InstanceInfo }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<{ running: boolean; pid?: number } | null>(null);
   const [versions, setVersions] = useState<{ node: any; openclaw: any } | null>(null);
   const [configText, setConfigText] = useState("");
@@ -1199,7 +1207,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
       setConfigDirty(false);
       setConfigError("");
     } catch (e: any) {
-      setConfigError(e.message || "Failed to load config");
+      setConfigError(e.message || t("instance.control.failedLoadConfig"));
     }
   };
 
@@ -1226,7 +1234,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
     try {
       JSON.parse(configText);
     } catch {
-      setConfigError("Invalid JSON");
+      setConfigError(t("instance.control.invalidJson"));
       return;
     }
     setBusy("config");
@@ -1373,7 +1381,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
   };
 
   const restoreSnapshot = async (snapId: number) => {
-    if (!confirm(`Restore config from snapshot #${snapId}? This will overwrite the current remote config.`)) return;
+    if (!confirm(t("instance.control.restoreConfirm", { id: snapId }))) return;
     setBusy("restore");
     try {
       await post(`/lifecycle/${inst.id}/snapshots/${snapId}/restore`, {});
@@ -1389,7 +1397,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
   if (initialLoading) {
     return (
       <div className="flex items-center justify-center py-20 text-ink-3 text-sm">
-        <RefreshCw size={16} className="animate-spin mr-2" /> Loading lifecycle data from remote...
+        <RefreshCw size={16} className="animate-spin mr-2" /> {t("instance.control.loadingLifecycle")}
       </div>
     );
   }
@@ -1398,12 +1406,12 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
     <div className="space-y-6">
       {/* Process Control */}
       <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-        <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Process Control</h3>
+        <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">{t("instance.control.processControl")}</h3>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <span className={`inline-block w-3 h-3 rounded-full ${status === null ? "bg-ink-3 animate-pulse" : status.running ? "bg-ok shadow-glow-cyan" : "bg-ink-3"}`} />
             <span className="text-ink font-medium">
-              {status === null ? "Checking status..." : status.running ? (status.pid ? `Running (PID ${status.pid})` : "Running") : "Stopped"}
+              {status === null ? t("instance.control.checkingStatus") : status.running ? (status.pid ? t("instance.control.runningWithPid", { pid: status.pid }) : t("instance.control.runningLabel")) : t("instance.control.stoppedLabel")}
             </span>
           </div>
           <div className="flex gap-2 ml-auto">
@@ -1412,45 +1420,45 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
               disabled={!!busy || status?.running === true}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-ok/20 text-ok hover:bg-ok/30 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Play size={14} /> Start
+              <Play size={14} /> {t("common.start")}
             </button>
             <button
               onClick={() => doAction("stop")}
               disabled={!!busy || !status?.running}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-danger/20 text-danger hover:bg-danger/30 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Square size={14} /> Stop
+              <Square size={14} /> {t("common.stop")}
             </button>
             <button
               onClick={() => doAction("restart")}
               disabled={!!busy}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-warn/20 text-warn hover:bg-warn/30 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <RotateCcw size={14} /> Restart
+              <RotateCcw size={14} /> {t("common.restart")}
             </button>
           </div>
         </div>
         {busy && ["start", "stop", "restart"].includes(busy) && (
-          <p className="mt-2 text-sm text-ink-3 animate-pulse">Processing {busy}...</p>
+          <p className="mt-2 text-sm text-ink-3 animate-pulse">{t("instance.control.processing", { action: busy })}</p>
         )}
       </div>
 
       {/* Version & Upgrade */}
       <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-        <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Version</h3>
+        <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">{t("instance.control.version")}</h3>
         <div className="flex items-center gap-6">
           <div>
-            <span className="text-xs text-ink-3">Installed</span>
-            <p className="font-mono text-ink">{versions?.openclaw?.installed || inst.version || "not found"}</p>
+            <span className="text-xs text-ink-3">{t("instance.control.installed")}</span>
+            <p className="font-mono text-ink">{versions?.openclaw?.installed || inst.version || t("instance.control.notFound")}</p>
           </div>
           <div>
-            <span className="text-xs text-ink-3">Latest</span>
-            <p className="font-mono text-ink">{versions?.openclaw?.latest || (versions ? "unknown" : "...")}</p>
+            <span className="text-xs text-ink-3">{t("instance.control.latest")}</span>
+            <p className="font-mono text-ink">{versions?.openclaw?.latest || (versions ? t("common.unknown") : "...")}</p>
           </div>
           <div>
-            <span className="text-xs text-ink-3">Node.js</span>
+            <span className="text-xs text-ink-3">{t("instance.control.nodejs")}</span>
             <p className={`font-mono ${!versions ? "text-ink-3" : versions.node?.sufficient ? "text-ok" : "text-danger"}`}>
-              {versions?.node?.version || (versions ? "not found" : "...")}
+              {versions?.node?.version || (versions ? t("instance.control.notFound") : "...")}
             </p>
           </div>
           {versions?.openclaw?.distTags && (
@@ -1473,7 +1481,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
                 disabled={!!busy || (versions?.openclaw?.installed === installVersion)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-brand/20 text-brand hover:bg-brand/30 disabled:opacity-40"
               >
-                {(versions?.openclaw?.installed || inst.version) ? <><ArrowUpCircle size={14} /> Upgrade</> : <><Download size={14} /> Install</>}
+                {(versions?.openclaw?.installed || inst.version) ? <><ArrowUpCircle size={14} /> {t("instance.control.upgrade")}</> : <><Download size={14} /> {t("instance.control.install")}</>}
               </button>
               {(versions?.openclaw?.installed || inst.version) && (
                 <button
@@ -1481,7 +1489,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
                   disabled={!!busy}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-danger/20 text-danger hover:bg-danger/30 disabled:opacity-40"
                 >
-                  <Trash2 size={14} /> Uninstall
+                  <Trash2 size={14} /> {t("instance.control.uninstall")}
                 </button>
               )}
             </div>
@@ -1504,13 +1512,13 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
       {/* Config Editor */}
       <div className="bg-s1 border border-edge rounded-card shadow-card">
         <div className="flex items-center justify-between p-4 border-b border-edge">
-          <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">Configuration File</h3>
+          <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">{t("instance.control.configFile")}</h3>
           <button
             onClick={saveConfig}
             disabled={!configDirty || !!busy}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-brand text-white hover:bg-brand-light disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <Save size={14} /> Save
+            <Save size={14} /> {t("common.save")}
           </button>
         </div>
         <textarea
@@ -1525,12 +1533,12 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
       {/* Config Snapshots */}
       <div className="bg-s1 border border-edge rounded-card shadow-card">
         <div className="flex items-center justify-between p-4 border-b border-edge">
-          <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">Config Snapshots</h3>
+          <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">{t("instance.control.configSnapshots")}</h3>
           <div className="flex gap-2">
             <input
               value={snapReason}
               onChange={(e) => setSnapReason(e.target.value)}
-              placeholder="Reason (optional)"
+              placeholder={t("instance.control.reasonPlaceholder")}
               className="px-2 py-1 text-sm bg-s2 border border-edge rounded text-ink placeholder:text-ink-3 w-40"
             />
             <button
@@ -1538,7 +1546,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
               disabled={!configText || !!busy}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-brand/20 text-brand hover:bg-brand/30 disabled:opacity-40"
             >
-              <Camera size={14} /> Snapshot
+              <Camera size={14} /> {t("instance.control.snapshot")}
             </button>
           </div>
         </div>
@@ -1554,9 +1562,9 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
                   onClick={() => restoreSnapshot(s.id)}
                   disabled={!!busy}
                   className="flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-s2 text-ink-3 hover:text-warn hover:bg-warn/10 disabled:opacity-40"
-                  title="Restore this snapshot to remote"
+                  title={t("instance.control.restore")}
                 >
-                  <RotateCcw size={11} /> Restore
+                  <RotateCcw size={11} /> {t("instance.control.restore")}
                 </button>
                 <button
                   onClick={() => setDiffIds(prev => prev[0] === null ? [s.id, prev[1]] : [prev[0], s.id])}
@@ -1564,13 +1572,13 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
                     diffIds.includes(s.id) ? "bg-brand text-white" : "bg-s2 text-ink-3 hover:text-ink"
                   }`}
                 >
-                  {diffIds[0] === s.id ? "A" : diffIds[1] === s.id ? "B" : "Select"}
+                  {diffIds[0] === s.id ? "A" : diffIds[1] === s.id ? "B" : t("common.select")}
                 </button>
               </div>
             ))}
           </div>
         ) : (
-          <p className="p-4 text-sm text-ink-3">No snapshots yet. Take one to track config changes.</p>
+          <p className="p-4 text-sm text-ink-3">{t("instance.control.noSnapshots")}</p>
         )}
 
         {/* Diff controls */}
@@ -1578,26 +1586,26 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
           <div className="border-t border-edge p-4">
             <div className="flex items-center gap-2">
               <span className="text-sm text-ink-2">
-                Comparing: #{diffIds[0] ?? "?"} vs #{diffIds[1] ?? "?"}
+                {t("instance.control.comparing", { a: diffIds[0] ?? "?", b: diffIds[1] ?? "?" })}
               </span>
               <button
                 onClick={doDiff}
                 disabled={diffIds[0] === null || diffIds[1] === null}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-cyan/20 text-cyan hover:bg-cyan/30 disabled:opacity-40"
               >
-                <GitCompare size={14} /> Compare
+                <GitCompare size={14} /> {t("common.compare")}
               </button>
               <button
                 onClick={() => { setDiffIds([null, null]); setDiffResult(null); }}
                 className="px-2 py-1 text-xs text-ink-3 hover:text-ink"
               >
-                Clear
+                {t("common.clear")}
               </button>
             </div>
             {diffResult && (
               <div className="mt-3 bg-s2 rounded p-3 text-sm font-mono overflow-auto max-h-60">
                 {diffResult.changes.length === 0 ? (
-                  <p className="text-ok">No differences found</p>
+                  <p className="text-ok">{t("instance.control.noDifferencesFound")}</p>
                 ) : (
                   diffResult.changes.map((ch: any, i: number) => (
                     <div key={i} className="mb-1">
@@ -1620,7 +1628,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
               onClick={doCleanup}
               className="flex items-center gap-1.5 px-2 py-1 text-xs text-ink-3 hover:text-danger"
             >
-              <Trash2 size={12} /> Clean old snapshots
+              <Trash2 size={12} /> {t("instance.control.cleanOldSnapshots")}
             </button>
           </div>
         )}
@@ -1629,18 +1637,18 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
       {/* Logs */}
       <div className="bg-s1 border border-edge rounded-card shadow-card">
         <div className="flex items-center justify-between p-4 border-b border-edge">
-          <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">Logs</h3>
+          <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">{t("instance.control.logs")}</h3>
           <button
             onClick={toggleLogs}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-s2 text-ink-2 hover:text-ink hover:bg-s3"
           >
-            <Terminal size={14} /> {showLogs ? "Hide" : "Stream Logs"}
+            <Terminal size={14} /> {showLogs ? t("instance.control.hideLogs") : t("instance.control.streamLogs")}
           </button>
         </div>
         {showLogs && (
           <div ref={logRef} className="h-64 overflow-auto p-4 bg-deep font-mono text-xs text-ink-2 whitespace-pre-wrap">
             {logs.length === 0 ? (
-              <span className="text-ink-3 animate-pulse">Waiting for log output...</span>
+              <span className="text-ink-3 animate-pulse">{t("instance.control.waitingForLogs")}</span>
             ) : (
               logs.map((line, i) => <div key={i}>{line}</div>)
             )}
@@ -1650,9 +1658,9 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
 
       {confirmUninstall && (
         <ConfirmDialog
-          title="Uninstall OpenClaw"
-          message={`This will stop all running processes, disable systemd services, and remove the openclaw npm package from the host. Configuration files will be preserved.`}
-          confirmLabel="Uninstall"
+          title={t("instance.control.uninstallConfirmTitle")}
+          message={t("instance.control.uninstallConfirmMsg")}
+          confirmLabel={t("instance.control.uninstall")}
           onConfirm={async () => {
             setConfirmUninstall(false);
             await doUninstall();
@@ -1665,6 +1673,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
 }
 
 function ChannelsTab({ inst }: { inst: InstanceInfo }) {
+  const { t } = useTranslation();
   const [channels, setChannels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [probing, setProbing] = useState(false);
@@ -1694,12 +1703,12 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
   }
 
   async function handleLogout(channel: string, accountId: string) {
-    if (!confirm(`Logout ${channel}/${accountId}? This will clear stored credentials.`)) return;
+    if (!confirm(`${t("channels.logout")} ${channel}/${accountId}?`)) return;
     try {
       await post(`/lifecycle/${inst.id}/channels/logout`, { channel, accountId });
       loadChannels();
     } catch (err: any) {
-      alert(`Logout failed: ${err.message}`);
+      alert(`${t("channels.logout")} failed: ${err.message}`);
     }
   }
 
@@ -1735,7 +1744,7 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
       setShowRestartDialog(true);
       loadChannels();
     } catch (err: any) {
-      alert(`Save failed: ${err.message}`);
+      alert(`${t("common.save")} failed: ${err.message}`);
     }
     setSaving(false);
   }
@@ -1750,30 +1759,30 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
       setShowRestartDialog(true);
       loadChannels();
     } catch (err: any) {
-      alert(`Toggle failed: ${err.message}`);
+      alert(`${t("common.error")}: ${err.message}`);
     }
   }
 
   const configChannels = (inst.config as any)?.parsed?.channels || {};
 
-  if (loading) return <div className="text-ink-3 text-sm p-4">Loading channels...</div>;
+  if (loading) return <div className="text-ink-3 text-sm p-4">{t("channels.loadingChannels")}</div>;
 
   return (
     <div className="space-y-4">
       {/* Header with probe button */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-ink">Channels</h3>
+        <h3 className="text-lg font-semibold text-ink">{t("channels.title")}</h3>
         <button
           onClick={handleProbe}
           disabled={probing}
           className="flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink"
         >
           <Search size={14} className={probing ? "animate-spin" : ""} />
-          {probing ? "Probing..." : "Probe"}
+          {probing ? t("channels.probing") : t("channels.probe")}
         </button>
       </div>
 
-      {channels.length === 0 && <p className="text-ink-3 text-sm">No channels configured</p>}
+      {channels.length === 0 && <p className="text-ink-3 text-sm">{t("channels.noChannelsConfigured")}</p>}
 
       {/* Channels grouped by type, running channels first */}
       {[...channels].sort((a: any, b: any) => {
@@ -1797,10 +1806,10 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                 <span className="text-ink-3 text-xs">{ch.type}</span>
               </div>
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-ink-2">{ch.accounts.length} account{ch.accounts.length !== 1 ? "s" : ""}</span>
-                {connectedCount > 0 && <span className="text-ok">{connectedCount} connected</span>}
-                {runningCount > connectedCount && <span className="text-ok">{runningCount - connectedCount} running</span>}
-                {ch.accounts.length > runningCount && <span className="text-ink-2">{ch.accounts.length - runningCount} stopped</span>}
+                <span className="text-ink-2">{ch.accounts.length} {t("channels.account")}{ch.accounts.length !== 1 ? "s" : ""}</span>
+                {connectedCount > 0 && <span className="text-ok">{connectedCount} {t("channels.connected")}</span>}
+                {runningCount > connectedCount && <span className="text-ok">{runningCount - connectedCount} {t("channels.running")}</span>}
+                {ch.accounts.length > runningCount && <span className="text-ink-2">{ch.accounts.length - runningCount} {t("channels.stopped")}</span>}
               </div>
             </div>
 
@@ -1832,19 +1841,19 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                             onClick={() => startEdit(ch.type, acc.accountId, acc, configChannels)}
                             className="px-2 py-1 text-xs rounded bg-s2 border border-edge text-ink hover:bg-s3"
                           >
-                            Edit
+                            {t("common.edit")}
                           </button>
                           <button
                             onClick={() => handleToggleEnabled(ch.type, acc.accountId, acc.enabled)}
                             className="px-2 py-1 text-xs rounded bg-s2 border border-edge text-ink hover:bg-s3"
                           >
-                            {acc.enabled ? "Disable" : "Enable"}
+                            {acc.enabled ? t("channels.disable") : t("channels.enable")}
                           </button>
                           <button
                             onClick={() => handleLogout(ch.type, acc.accountId)}
                             className="px-2 py-1 text-xs rounded bg-s2 border border-edge text-ink hover:bg-s3 flex items-center gap-1"
                           >
-                            <LogOut size={12} /> Logout
+                            <LogOut size={12} /> {t("channels.logout")}
                           </button>
                         </div>
                       )}
@@ -1853,10 +1862,10 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                     {/* Status details */}
                     <div className="space-y-1.5 text-xs">
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        <div><span className="text-ink-3">Connected:</span> <span className="text-ink">{timeAgo(acc.lastConnectedAt) || "\u2014"}</span></div>
-                        <div><span className="text-ink-3">Last in:</span> <span className="text-ink">{timeAgo(acc.lastInboundAt) || "\u2014"}</span></div>
-                        <div><span className="text-ink-3">Last out:</span> <span className="text-ink">{timeAgo(acc.lastOutboundAt) || "\u2014"}</span></div>
-                        <div><span className="text-ink-3">Reconnects:</span> <span className="text-ink">{acc.reconnectAttempts ?? 0}</span></div>
+                        <div><span className="text-ink-3">{t("channels.connectedLabel")}</span> <span className="text-ink">{timeAgo(acc.lastConnectedAt) || "\u2014"}</span></div>
+                        <div><span className="text-ink-3">{t("channels.lastIn")}</span> <span className="text-ink">{timeAgo(acc.lastInboundAt) || "\u2014"}</span></div>
+                        <div><span className="text-ink-3">{t("channels.lastOut")}</span> <span className="text-ink">{timeAgo(acc.lastOutboundAt) || "\u2014"}</span></div>
+                        <div><span className="text-ink-3">{t("channels.reconnects")}</span> <span className="text-ink">{acc.reconnectAttempts ?? 0}</span></div>
                       </div>
                       {acc.lastError && (
                         <div className="text-danger bg-danger/10 px-2 py-1 rounded">{acc.lastError}</div>
@@ -1864,11 +1873,11 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
 
                       {/* Policies */}
                       <div className="flex flex-wrap gap-3 pt-0.5">
-                        {acc.dmPolicy && <div><span className="text-ink-3">DM:</span> <span className="text-ink">{acc.dmPolicy}</span></div>}
-                        {acc.groupPolicy && <div><span className="text-ink-3">Group:</span> <span className="text-ink">{acc.groupPolicy}</span></div>}
+                        {acc.dmPolicy && <div><span className="text-ink-3">{t("channels.dmLabel")}</span> <span className="text-ink">{acc.dmPolicy}</span></div>}
+                        {acc.groupPolicy && <div><span className="text-ink-3">{t("channels.groupLabel")}</span> <span className="text-ink">{acc.groupPolicy}</span></div>}
                         {acc.allowFrom?.length > 0 && (
                           <div className="flex items-center gap-1 flex-wrap">
-                            <span className="text-ink-3">Allow:</span>
+                            <span className="text-ink-3">{t("channels.allowLabel")}</span>
                             {acc.allowFrom.map((u: string) => (
                               <span key={u} className="px-1.5 py-0.5 rounded bg-cyan-dim text-cyan text-[10px]">{u}</span>
                             ))}
@@ -1876,7 +1885,7 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                         )}
                         {acc.groupAllowFrom?.length > 0 && (
                           <div className="flex items-center gap-1 flex-wrap">
-                            <span className="text-ink-3">Group Allow:</span>
+                            <span className="text-ink-3">{t("channels.groupAllowLabel")}</span>
                             {acc.groupAllowFrom.map((g: string) => (
                               <span key={g} className="px-1.5 py-0.5 rounded bg-cyan-dim text-cyan text-[10px]">{g}</span>
                             ))}
@@ -1899,13 +1908,13 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                               disabled={saving}
                               className="px-3 py-1.5 text-sm rounded bg-brand text-white hover:bg-brand-light disabled:opacity-50"
                             >
-                              {saving ? "Saving..." : "Save"}
+                              {saving ? t("common.saving") : t("common.save")}
                             </button>
                             <button
                               onClick={() => { setEditingAccount(null); setEditValues(null); }}
                               className="px-3 py-1.5 text-sm rounded bg-s2 border border-edge text-ink hover:bg-s3"
                             >
-                              Cancel
+                              {t("common.cancel")}
                             </button>
                           </div>
                         </div>
@@ -1925,6 +1934,7 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
 }
 
 export function Instance() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { instances, loading, refresh } = useInstances();
   const [activeTab, setActiveTab] = useState<Tab>("overview");
@@ -1944,27 +1954,27 @@ export function Instance() {
       return (
         <div className="flex items-center justify-center h-full text-ink-3 text-sm">
           <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
-          Loading instance...
+          {t("instance.loadingInstance")}
         </div>
       );
     }
     return (
       <div className="flex flex-col items-center justify-center h-full text-ink-3">
-        <p className="text-lg mb-2">Instance not found</p>
-        <Link to="/" className="text-cyan hover:underline text-sm">Back to Dashboard</Link>
+        <p className="text-lg mb-2">{t("instance.instanceNotFound")}</p>
+        <Link to="/" className="text-cyan hover:underline text-sm">{t("instance.backToDashboard")}</Link>
       </div>
     );
   }
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "overview", label: "Overview" },
-    { key: "sessions", label: `Sessions (${inst.sessions.length})` },
-    { key: "config", label: "Config" },
-    { key: "security", label: "Security" },
-    { key: "agents", label: `Agents (${inst.agents.length})` },
-    { key: "channels", label: "Channels" },
-    { key: "llm", label: "LLM" },
-    { key: "control", label: "Control" },
+    { key: "overview", label: t("instance.overviewTab") },
+    { key: "sessions", label: `${t("instance.sessionsTab")} (${inst.sessions.length})` },
+    { key: "config", label: t("instance.configTab") },
+    { key: "security", label: t("instance.securityTab") },
+    { key: "agents", label: `${t("instance.agentsTab")} (${inst.agents.length})` },
+    { key: "channels", label: t("instance.channelsTab") },
+    { key: "llm", label: t("instance.llmTab") },
+    { key: "control", label: t("instance.controlTab") },
   ];
 
   return (
@@ -1983,13 +1993,13 @@ export function Instance() {
         </div>
 
         <div className="flex gap-1 mb-4 border-b border-edge pb-0">
-          {tabs.map((t) => (
+          {tabs.map((tab) => (
             <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className={`px-3 py-1.5 text-sm ${activeTab === t.key ? "border-b-2 border-brand text-brand" : "text-ink-3 hover:text-ink"}`}
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-3 py-1.5 text-sm ${activeTab === tab.key ? "border-b-2 border-brand text-brand" : "text-ink-3 hover:text-ink"}`}
             >
-              {t.label}
+              {tab.label}
             </button>
           ))}
         </div>

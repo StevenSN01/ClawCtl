@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { get, put, post, del } from "../lib/api";
 import { useAuth, type Role } from "../hooks/useAuth";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -65,6 +66,7 @@ const MODELS_BY_PROVIDER: Record<string, string[]> = {
 };
 
 export function Settings() {
+  const { t, i18n } = useTranslation();
   const { user: currentUser } = useAuth();
   const isAdmin = currentUser?.role === "admin";
 
@@ -213,9 +215,9 @@ export function Settings() {
         };
       }
       await put("/settings", { llm: llmConfig });
-      setMessage("Settings saved");
+      setMessage(t("settings.settingsSaved"));
     } catch (e: any) {
-      setMessage(`Error: ${e.message}`);
+      setMessage(`${t("common.error")}: ${e.message}`);
     } finally {
       setSaving(false);
     }
@@ -282,25 +284,40 @@ export function Settings() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+      <h1 className="text-2xl font-bold mb-6">{t("settings.title")}</h1>
+
+      {/* Language */}
+      <div className="bg-s1 border border-edge rounded-card p-5 shadow-card mb-6">
+        <h2 className="text-lg font-semibold mb-4">Language</h2>
+        <div>
+          <select
+            value={i18n.language.startsWith("zh") ? "zh" : "en"}
+            onChange={(e) => i18n.changeLanguage(e.target.value)}
+            className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink"
+          >
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+          </select>
+        </div>
+      </div>
 
       <div className="bg-s1 border border-edge rounded-card p-5 shadow-card mb-6">
-        <h2 className="text-lg font-semibold mb-4">LLM Configuration</h2>
+        <h2 className="text-lg font-semibold mb-4">{t("settings.llmConfig")}</h2>
         <div className="space-y-3">
           <div>
-            <label className="block text-sm text-ink-2 mb-1">Provider</label>
+            <label className="block text-sm text-ink-2 mb-1">{t("settings.providerLabel")}</label>
             <select value={provider} onChange={(e) => { setProvider(e.target.value); setModel(defaultModelFor(e.target.value)); }} disabled={!isAdmin} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink disabled:opacity-50">
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="azure">Azure OpenAI</option>
-              <option value="ollama">Ollama (local)</option>
+              <option value="openai">{t("settings.openaiOption")}</option>
+              <option value="anthropic">{t("settings.anthropicOption")}</option>
+              <option value="azure">{t("settings.azureOption")}</option>
+              <option value="ollama">{t("settings.ollamaOption")}</option>
             </select>
           </div>
 
           {/* Anthropic: just API key */}
           {provider === "anthropic" && (
             <div>
-              <label className="block text-sm text-ink-2 mb-1">API Key</label>
+              <label className="block text-sm text-ink-2 mb-1">{t("settings.apiKeyLabel")}</label>
               <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" disabled={!isAdmin} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
             </div>
           )}
@@ -309,15 +326,15 @@ export function Settings() {
           {provider === "openai" && (
             <div className="space-y-3">
               <div>
-                <label className="block text-sm text-ink-2 mb-1">Authentication</label>
+                <label className="block text-sm text-ink-2 mb-1">{t("settings.authenticationLabel")}</label>
                 <select value={openaiAuth} onChange={(e) => setOpenaiAuth(e.target.value as "apikey" | "oauth")} disabled={!isAdmin} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink disabled:opacity-50">
-                  <option value="apikey">API Key</option>
-                  <option value="oauth">OAuth (ChatGPT Plus/Pro)</option>
+                  <option value="apikey">{t("settings.apiKeyAuthOption")}</option>
+                  <option value="oauth">{t("settings.oauthAuthOption")}</option>
                 </select>
               </div>
               {openaiAuth === "apikey" && (
                 <div>
-                  <label className="block text-sm text-ink-2 mb-1">API Key</label>
+                  <label className="block text-sm text-ink-2 mb-1">{t("settings.apiKeyLabel")}</label>
                   <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" disabled={!isAdmin} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
               )}
@@ -350,7 +367,7 @@ export function Settings() {
                             await post("/settings/oauth/openai/save", {});
                             setHasOAuthToken(true);
                             setOauthExpiry(s.credentials?.expiresAt || null);
-                            setMessage("OpenAI OAuth configured successfully");
+                            setMessage(t("settings.oauth.oauthSuccess"));
                           } else if (s.status === "error") {
                             clearInterval(poll);
                             setOauthStatus("error");
@@ -384,46 +401,46 @@ export function Settings() {
             <div className="space-y-3 p-3 bg-s2/50 border border-edge rounded-lg">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Resource Name</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.azure.resourceName")}</label>
                   <input value={azResource} onChange={(e) => setAzResource(e.target.value)} disabled={!isAdmin} placeholder="my-openai" className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Deployment Name</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.azure.deploymentName")}</label>
                   <input value={azDeployment} onChange={(e) => setAzDeployment(e.target.value)} disabled={!isAdmin} placeholder="gpt-5.1-codex" className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-ink-2 mb-1">Authentication</label>
+                <label className="block text-xs text-ink-2 mb-1">{t("settings.azure.authentication")}</label>
                 <select value={azAuth} onChange={(e) => setAzAuth(e.target.value as "key" | "ad")} disabled={!isAdmin} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink disabled:opacity-50">
-                  <option value="key">API Key</option>
-                  <option value="ad">Azure AD (Client Credentials)</option>
+                  <option value="key">{t("settings.azure.apiKeyOption")}</option>
+                  <option value="ad">{t("settings.azure.azureAdOption")}</option>
                 </select>
               </div>
               {azAuth === "key" && (
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">API Key</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.apiKeyLabel")}</label>
                   <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" disabled={!isAdmin} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
               )}
               {azAuth === "ad" && (
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs text-ink-2 mb-1">Tenant ID</label>
+                    <label className="block text-xs text-ink-2 mb-1">{t("settings.azure.tenantId")}</label>
                     <input value={azTenant} onChange={(e) => setAzTenant(e.target.value)} disabled={!isAdmin} placeholder="xxxxxxxx-..." className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                   </div>
                   <div>
-                    <label className="block text-xs text-ink-2 mb-1">Client ID</label>
+                    <label className="block text-xs text-ink-2 mb-1">{t("settings.azure.clientId")}</label>
                     <input value={azClientId} onChange={(e) => setAzClientId(e.target.value)} disabled={!isAdmin} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                   </div>
                   <div>
-                    <label className="block text-xs text-ink-2 mb-1">Client Secret</label>
+                    <label className="block text-xs text-ink-2 mb-1">{t("settings.azure.clientSecret")}</label>
                     <input value={azClientSecret} onChange={(e) => setAzClientSecret(e.target.value)} type="password" disabled={!isAdmin} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                   </div>
                 </div>
               )}
               {azResource && azDeployment && (
                 <p className="text-[10px] text-ink-3 font-mono truncate">
-                  Endpoint: https://{azResource}.openai.azure.com/openai/deployments/{azDeployment}
+                  {t("settings.azure.endpoint")} https://{azResource}.openai.azure.com/openai/deployments/{azDeployment}
                 </p>
               )}
             </div>
@@ -431,7 +448,7 @@ export function Settings() {
 
           {/* Model — two-level: provider determines the model list */}
           <div>
-            <label className="block text-sm text-ink-2 mb-1">Model</label>
+            <label className="block text-sm text-ink-2 mb-1">{t("settings.modelLabel")}</label>
             <select
               value={providerModels.includes(model) ? model : "__custom__"}
               onChange={(e) => { if (e.target.value !== "__custom__") setModel(e.target.value); }}
@@ -449,7 +466,7 @@ export function Settings() {
               value={model}
               onChange={(e) => setModel(e.target.value)}
               disabled={!isAdmin}
-              placeholder="Or type a custom model name"
+              placeholder={t("settings.customModelPlaceholder")}
               className="w-full bg-s2 border border-edge rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50 mt-1.5"
             />
           </div>
@@ -457,38 +474,38 @@ export function Settings() {
           {/* Base URL — OpenAI compatible / Ollama only (Azure auto-builds it) */}
           {provider !== "azure" && (
             <div>
-              <label className="block text-sm text-ink-2 mb-1">Base URL (optional)</label>
-              <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} disabled={!isAdmin} placeholder={provider === "ollama" ? "http://localhost:11434" : "Leave blank for default"} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
+              <label className="block text-sm text-ink-2 mb-1">{t("settings.baseUrlLabel")}</label>
+              <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} disabled={!isAdmin} placeholder={provider === "ollama" ? t("settings.ollamaPlaceholder") : t("settings.defaultPlaceholder")} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
             </div>
           )}
           {isAdmin && (
             <div className="flex items-center gap-3 pt-2">
               <button onClick={saveLlm} disabled={saving} className="px-4 py-2 bg-brand hover:bg-brand-light rounded-lg text-sm disabled:opacity-50">
-                {saving ? "Saving..." : "Save"}
+                {saving ? t("common.saving") : t("common.save")}
               </button>
-              {message && <span className={`text-sm ${message.startsWith("Error") ? "text-danger" : "text-ok"}`}>{message}</span>}
+              {message && <span className={`text-sm ${message.startsWith(t("common.error")) ? "text-danger" : "text-ok"}`}>{message}</span>}
             </div>
           )}
-          {!isAdmin && <p className="text-xs text-ink-3 pt-1">Only admins can modify LLM settings</p>}
+          {!isAdmin && <p className="text-xs text-ink-3 pt-1">{t("settings.adminOnlyLlm")}</p>}
         </div>
       </div>
 
       {isAdmin && (
         <div className="bg-s1 border border-edge rounded-card p-5 shadow-card mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">User Management</h2>
+            <h2 className="text-lg font-semibold">{t("settings.userManagement")}</h2>
             <button onClick={() => setShowAddUser(true)} className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-sm font-medium">
-              + Add User
+              {t("settings.addUser")}
             </button>
           </div>
 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-edge text-ink-2">
-                <th className="text-left py-2">Username</th>
-                <th className="text-left py-2">Role</th>
-                <th className="text-left py-2">Last Login</th>
-                <th className="text-right py-2">Actions</th>
+                <th className="text-left py-2">{t("settings.usernameHeader")}</th>
+                <th className="text-left py-2">{t("settings.roleHeader")}</th>
+                <th className="text-left py-2">{t("settings.lastLoginHeader")}</th>
+                <th className="text-right py-2">{t("settings.actionsHeader")}</th>
               </tr>
             </thead>
             <tbody>
@@ -502,16 +519,16 @@ export function Settings() {
                       disabled={u.id === currentUser?.userId}
                       className="bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink disabled:opacity-50"
                     >
-                      <option value="admin">admin</option>
-                      <option value="operator">operator</option>
-                      <option value="auditor">auditor</option>
+                      <option value="admin">{t("settings.adminRole")}</option>
+                      <option value="operator">{t("settings.operatorRole")}</option>
+                      <option value="auditor">{t("settings.auditorRole")}</option>
                     </select>
                   </td>
-                  <td className="py-2 text-ink-3 text-xs">{u.last_login || "Never"}</td>
+                  <td className="py-2 text-ink-3 text-xs">{u.last_login || t("common.never")}</td>
                   <td className="py-2 text-right">
                     {u.id !== currentUser?.userId && (
                       <button onClick={() => setConfirmDeleteUser(u)} className="text-danger hover:text-danger/80 text-xs">
-                        Delete
+                        {t("common.delete")}
                       </button>
                     )}
                   </td>
@@ -524,25 +541,25 @@ export function Settings() {
             <div className="mt-4 p-3 bg-s2 rounded-card border border-edge">
               <div className="grid grid-cols-3 gap-3 mb-3">
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Username</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.usernameLabel")}</label>
                   <input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Password</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.passwordLabel")}</label>
                   <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Role</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.roleLabel")}</label>
                   <select value={newRole} onChange={(e) => setNewRole(e.target.value as Role)} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink disabled:opacity-50">
-                    <option value="admin">admin</option>
-                    <option value="operator">operator</option>
-                    <option value="auditor">auditor</option>
+                    <option value="admin">{t("settings.adminRole")}</option>
+                    <option value="operator">{t("settings.operatorRole")}</option>
+                    <option value="auditor">{t("settings.auditorRole")}</option>
                   </select>
                 </div>
               </div>
               <div className="flex gap-2 justify-end">
-                <button onClick={() => setShowAddUser(false)} className="px-3 py-1.5 text-sm text-ink-2 hover:text-ink">Cancel</button>
-                <button onClick={addUser} disabled={!newUsername || !newPassword} className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-sm disabled:opacity-50">Create</button>
+                <button onClick={() => setShowAddUser(false)} className="px-3 py-1.5 text-sm text-ink-2 hover:text-ink">{t("common.cancel")}</button>
+                <button onClick={addUser} disabled={!newUsername || !newPassword} className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-sm disabled:opacity-50">{t("common.create")}</button>
               </div>
             </div>
           )}
@@ -552,7 +569,7 @@ export function Settings() {
       {isAdmin && (
         <div className="bg-s1 border border-edge rounded-card p-5 shadow-card mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Remote Hosts</h2>
+            <h2 className="text-lg font-semibold">{t("settings.remoteHosts")}</h2>
             <div className="flex gap-2">
               <button
                 onClick={async () => {
@@ -563,16 +580,16 @@ export function Settings() {
                     const errors = results.filter((r) => r.error);
                     setScanMsg(`Discovered ${total} instance(s)${errors.length ? `, ${errors.length} error(s)` : ""}`);
                     get<RemoteHost[]>("/hosts").then(setHosts);
-                  } catch (e: any) { setScanMsg(`Error: ${e.message}`); }
+                  } catch (e: any) { setScanMsg(`${t("common.error")}: ${e.message}`); }
                   finally { setScanning(null); }
                 }}
                 disabled={scanning !== null || hosts.length === 0}
                 className="px-3 py-1.5 bg-ok hover:bg-ok/80 rounded-lg text-sm disabled:opacity-50"
               >
-                {scanning === -1 ? "Scanning..." : "Scan All"}
+                {scanning === -1 ? t("settings.scanningAll") : t("settings.scanAll")}
               </button>
               <button onClick={() => setShowAddHost(true)} className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-sm font-medium">
-                + Add Host
+                {t("settings.addHost")}
               </button>
             </div>
           </div>
@@ -581,19 +598,19 @@ export function Settings() {
           {installMsg && <p className={`text-sm mb-3 ${installMsg.includes("successfully") ? "text-ok" : "text-danger"}`}>{installMsg}</p>}
 
           {hosts.length === 0 && !showAddHost && (
-            <p className="text-sm text-ink-3">No remote hosts configured. Add a host and scan to discover OpenClaw instances.</p>
+            <p className="text-sm text-ink-3">{t("settings.noHostsConfigured")}</p>
           )}
 
           {hosts.length > 0 && (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-edge text-ink-2">
-                  <th className="text-left py-2">Label</th>
-                  <th className="text-left py-2">Host</th>
-                  <th className="text-left py-2">Auth</th>
-                  <th className="text-left py-2">Status</th>
-                  <th className="text-left py-2">Last Scan</th>
-                  <th className="text-right py-2">Actions</th>
+                  <th className="text-left py-2">{t("settings.hostLabelHeader")}</th>
+                  <th className="text-left py-2">{t("settings.hostHeader")}</th>
+                  <th className="text-left py-2">{t("settings.authHeader")}</th>
+                  <th className="text-left py-2">{t("settings.statusHeader")}</th>
+                  <th className="text-left py-2">{t("settings.lastScanHeader")}</th>
+                  <th className="text-right py-2">{t("settings.actionsHeader")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -603,21 +620,21 @@ export function Settings() {
                   <tr key={h.id} className="border-b border-edge/50">
                     <td className="py-2">{h.label}</td>
                     <td className="py-2 text-ink-2">{h.username}@{h.host}:{h.port}</td>
-                    <td className="py-2 text-ink-2 text-xs">{h.authMethod === "password" ? "Password" : "Key"}</td>
+                    <td className="py-2 text-ink-2 text-xs">{h.authMethod === "password" ? t("settings.passwordAuth") : t("settings.keyAuth")}</td>
                     <td className="py-2 text-xs">
                       {hasInstances
-                        ? <span className="text-ok">Running</span>
+                        ? <span className="text-ok">{t("settings.hostRunning")}</span>
                         : h.last_scan_at
-                          ? <span className="text-warn">Not installed</span>
-                          : <span className="text-ink-3">Unknown</span>
+                          ? <span className="text-warn">{t("settings.hostNotInstalled")}</span>
+                          : <span className="text-ink-3">{t("settings.hostUnknown")}</span>
                       }
                     </td>
                     <td className="py-2 text-xs">
                       {h.last_scan_error
-                        ? <span className="text-danger" title={h.last_scan_error}>Error</span>
+                        ? <span className="text-danger" title={h.last_scan_error}>{t("common.error")}</span>
                         : h.last_scan_at
                           ? <span className="text-ink-3">{h.last_scan_at}</span>
-                          : <span className="text-ink-3">Never</span>
+                          : <span className="text-ink-3">{t("common.never")}</span>
                       }
                     </td>
                     <td className="py-2 text-right flex justify-end gap-2">
@@ -665,14 +682,14 @@ export function Settings() {
                           disabled={scanning !== null || installing !== null}
                           className="text-brand hover:text-brand-light text-xs font-medium disabled:opacity-50"
                         >
-                          {installing === h.id ? "Installing..." : "Install"}
+                          {installing === h.id ? t("settings.installing") : t("settings.installButton")}
                         </button>
                       )}
                       <button
                         onClick={() => setConfirmDeleteHost(h)}
                         className="text-danger hover:text-danger/80 text-xs"
                       >
-                        Delete
+                        {t("common.delete")}
                       </button>
                     </td>
                   </tr>
@@ -686,30 +703,30 @@ export function Settings() {
             <div className="mt-4 p-3 bg-s2 rounded-card border border-edge">
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Label</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.labelLabel")}</label>
                   <input value={hostLabel} onChange={(e) => setHostLabel(e.target.value)} placeholder="Production Server" className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Host</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.hostLabel")}</label>
                   <input value={hostAddr} onChange={(e) => setHostAddr(e.target.value)} placeholder="192.168.1.100" className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Port</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.portLabel")}</label>
                   <input value={hostPort} onChange={(e) => setHostPort(e.target.value)} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-2 mb-1">Username</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.usernameHostLabel")}</label>
                   <input value={hostUser} onChange={(e) => setHostUser(e.target.value)} placeholder="ubuntu" className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-xs text-ink-2 mb-1">Auth Method</label>
+                  <label className="block text-xs text-ink-2 mb-1">{t("settings.authMethodLabel")}</label>
                   <select value={hostAuthMethod} onChange={(e) => setHostAuthMethod(e.target.value as "password" | "privateKey")} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink disabled:opacity-50">
-                    <option value="password">Password</option>
-                    <option value="privateKey">Private Key (paste content)</option>
+                    <option value="password">{t("settings.passwordOption")}</option>
+                    <option value="privateKey">{t("settings.privateKeyOption")}</option>
                   </select>
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-xs text-ink-2 mb-1">{hostAuthMethod === "password" ? "Password" : "Private Key"}</label>
+                  <label className="block text-xs text-ink-2 mb-1">{hostAuthMethod === "password" ? t("settings.passwordLabel") : t("settings.apiKeyLabel")}</label>
                   {hostAuthMethod === "password"
                     ? <input type="password" value={hostCredential} onChange={(e) => setHostCredential(e.target.value)} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
                     : <textarea value={hostCredential} onChange={(e) => setHostCredential(e.target.value)} rows={4} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50 font-mono" />
@@ -717,7 +734,7 @@ export function Settings() {
                 </div>
               </div>
               <div className="flex gap-2 justify-end">
-                <button onClick={() => { setShowAddHost(false); setHostLabel(""); setHostAddr(""); setHostPort("22"); setHostUser("ubuntu"); setHostCredential(""); }} className="px-3 py-1.5 text-sm text-ink-2 hover:text-ink">Cancel</button>
+                <button onClick={() => { setShowAddHost(false); setHostLabel(""); setHostAddr(""); setHostPort("22"); setHostUser("ubuntu"); setHostCredential(""); }} className="px-3 py-1.5 text-sm text-ink-2 hover:text-ink">{t("common.cancel")}</button>
                 <button
                   onClick={async () => {
                     try {
@@ -729,7 +746,7 @@ export function Settings() {
                   disabled={!hostAddr || !hostUser || !hostCredential}
                   className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-sm disabled:opacity-50"
                 >
-                  Add
+                  {t("common.add")}
                 </button>
               </div>
             </div>
@@ -739,7 +756,7 @@ export function Settings() {
 
       {/* Digest Configuration */}
       <div className="bg-s1 border border-edge rounded-card shadow-card mb-6">
-        <h2 className="text-lg font-semibold p-4 border-b border-edge">Digest & Notifications</h2>
+        <h2 className="text-lg font-semibold p-4 border-b border-edge">{t("settings.digest.title")}</h2>
         <div className="p-4 space-y-4">
           {/* Generate */}
           <div className="flex items-center gap-3">
@@ -748,15 +765,15 @@ export function Settings() {
               onChange={(e) => setDigestType(e.target.value as any)}
               className="px-3 py-1.5 text-sm bg-s2 border border-edge rounded text-ink"
             >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
+              <option value="daily">{t("settings.digest.daily")}</option>
+              <option value="weekly">{t("settings.digest.weekly")}</option>
             </select>
             <button
               onClick={generateDigest}
               disabled={digestLoading}
               className="px-4 py-1.5 text-sm rounded bg-brand text-white hover:bg-brand-light disabled:opacity-40"
             >
-              {digestLoading ? "Generating..." : "Generate Digest"}
+              {digestLoading ? t("settings.digest.generating") : t("settings.digest.generateDigest")}
             </button>
           </div>
 
@@ -770,23 +787,23 @@ export function Settings() {
                   {digest.highlights.map((h: string, i: number) => <li key={i}>{h}</li>)}
                 </ul>
               )}
-              <p className="text-xs text-ink-3">Period: {digest.period} | Generated: {digest.generatedAt}</p>
+              <p className="text-xs text-ink-3">{t("settings.digest.period")} {digest.period} | {t("settings.digest.generated")} {digest.generatedAt}</p>
             </div>
           )}
 
           {/* Push channels */}
           <div className="border-t border-edge pt-4 space-y-3">
-            <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">Push Channels</h3>
+            <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">{t("settings.digest.pushChannels")}</h3>
 
             <div className="flex items-center gap-2">
               <input
                 value={feishuUrl}
                 onChange={(e) => setFeishuUrl(e.target.value)}
-                placeholder="Feishu Webhook URL"
+                placeholder={t("settings.digest.feishuPlaceholder")}
                 className="flex-1 px-3 py-1.5 text-sm bg-s2 border border-edge rounded text-ink placeholder:text-ink-3"
               />
               <button onClick={pushFeishu} disabled={!feishuUrl} className="px-3 py-1.5 text-sm rounded bg-cyan/20 text-cyan hover:bg-cyan/30 disabled:opacity-40">
-                Push to Feishu
+                {t("settings.digest.pushToFeishu")}
               </button>
             </div>
 
@@ -794,40 +811,40 @@ export function Settings() {
               <input
                 value={tgBotToken}
                 onChange={(e) => setTgBotToken(e.target.value)}
-                placeholder="Telegram Bot Token"
+                placeholder={t("settings.digest.tgBotTokenPlaceholder")}
                 className="flex-1 px-3 py-1.5 text-sm bg-s2 border border-edge rounded text-ink placeholder:text-ink-3"
               />
               <input
                 value={tgChatId}
                 onChange={(e) => setTgChatId(e.target.value)}
-                placeholder="Chat ID"
+                placeholder={t("settings.digest.tgChatIdPlaceholder")}
                 className="w-32 px-3 py-1.5 text-sm bg-s2 border border-edge rounded text-ink placeholder:text-ink-3"
               />
               <button onClick={pushTelegram} disabled={!tgBotToken || !tgChatId} className="px-3 py-1.5 text-sm rounded bg-cyan/20 text-cyan hover:bg-cyan/30 disabled:opacity-40">
-                Push to Telegram
+                {t("settings.digest.pushToTelegram")}
               </button>
             </div>
 
             {pushResult && (
               <div className={`text-sm px-3 py-2 rounded ${pushResult.success ? "bg-ok-dim text-ok" : "bg-danger-dim text-danger"}`}>
-                {pushResult.success ? `Sent to ${pushResult.channel}` : `Failed: ${pushResult.error}`}
+                {pushResult.success ? t("settings.digest.sentTo", { channel: pushResult.channel }) : t("settings.digest.failed", { error: pushResult.error })}
               </div>
             )}
           </div>
 
           {/* Cron validation */}
           <div className="border-t border-edge pt-4">
-            <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-2">Schedule (Cron)</h3>
+            <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-2">{t("settings.digest.schedule")}</h3>
             <div className="flex items-center gap-2">
               <input
                 value={cronExpr}
                 onChange={(e) => validateCron(e.target.value)}
-                placeholder="e.g. 0 9 * * 1 (Mon 9am)"
+                placeholder={t("settings.digest.cronPlaceholder")}
                 className="w-64 px-3 py-1.5 text-sm font-mono bg-s2 border border-edge rounded text-ink placeholder:text-ink-3"
               />
               {cronValid !== null && (
                 <span className={`text-sm ${cronValid ? "text-ok" : "text-danger"}`}>
-                  {cronValid ? "Valid" : "Invalid"}
+                  {cronValid ? t("settings.digest.valid") : t("settings.digest.invalid")}
                 </span>
               )}
             </div>
@@ -836,14 +853,14 @@ export function Settings() {
       </div>
 
       <div className="bg-s1 border border-edge rounded-card p-5 shadow-card">
-        <h2 className="text-lg font-semibold mb-2">About</h2>
-        <p className="text-sm text-ink-2">ClawCtl v0.1.0 — Multi-instance OpenClaw management platform</p>
+        <h2 className="text-lg font-semibold mb-2">{t("settings.about")}</h2>
+        <p className="text-sm text-ink-2">{t("settings.aboutDescription")}</p>
       </div>
 
       {confirmDeleteHost && (
         <ConfirmDialog
-          title="Delete Host"
-          message={`Remove "${confirmDeleteHost.label}" (${confirmDeleteHost.username}@${confirmDeleteHost.host})? This will also remove all associated instances and SSH tunnels.`}
+          title={t("settings.deleteHost")}
+          message={t("settings.deleteHostConfirm", { label: confirmDeleteHost.label, user: confirmDeleteHost.username, host: confirmDeleteHost.host })}
           onConfirm={async () => {
             await del(`/hosts/${confirmDeleteHost.id}`);
             setHosts(hosts.filter((x) => x.id !== confirmDeleteHost.id));
@@ -854,8 +871,8 @@ export function Settings() {
       )}
       {confirmDeleteUser && (
         <ConfirmDialog
-          title="Delete User"
-          message={`Remove user "${confirmDeleteUser.username}" (${confirmDeleteUser.role})? This action cannot be undone.`}
+          title={t("settings.deleteUser")}
+          message={t("settings.deleteUserConfirm", { username: confirmDeleteUser.username, role: confirmDeleteUser.role })}
           onConfirm={async () => {
             await del(`/auth/users/${confirmDeleteUser.id}`);
             setUsers(users.filter((u) => u.id !== confirmDeleteUser.id));
@@ -880,10 +897,11 @@ function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, authUrl,
   onStart: () => void;
   onSubmitManual: () => void;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const isExpired = expiry ? expiry < Date.now() : false;
   const expiryText = expiry
-    ? `${isExpired ? "Expired" : "Expires"}: ${new Date(expiry).toLocaleString()}`
+    ? `${isExpired ? t("settings.oauth.tokenExpiredAutoRefresh") : t("settings.oauth.oauthConnected")} | ${new Date(expiry).toLocaleString()}`
     : null;
 
   return (
@@ -892,7 +910,7 @@ function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, authUrl,
         <div className="flex items-center gap-2">
           <span className={`inline-block w-2 h-2 rounded-full ${isExpired ? "bg-warn" : "bg-ok"}`} />
           <span className="text-sm text-ink-2">
-            {isExpired ? "Token expired (will auto-refresh)" : "OAuth connected"}
+            {isExpired ? t("settings.oauth.tokenExpiredAutoRefresh") : t("settings.oauth.oauthConnected")}
           </span>
           {expiryText && <span className="text-[10px] text-ink-3 ml-auto">{expiryText}</span>}
         </div>
@@ -904,17 +922,17 @@ function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, authUrl,
           disabled={!isAdmin}
           className="w-full px-4 py-2.5 bg-brand hover:bg-brand-light rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
         >
-          {hasToken ? "Re-authenticate with OpenAI" : "Login with OpenAI"}
+          {hasToken ? t("settings.oauth.reAuth") : t("settings.oauth.loginWithOpenai")}
         </button>
       )}
 
       {status === "starting" && (
-        <p className="text-sm text-ink-2 animate-pulse">Starting OAuth flow...</p>
+        <p className="text-sm text-ink-2 animate-pulse">{t("settings.oauth.startingOauth")}</p>
       )}
 
       {status === "waiting" && authUrl && (
         <div className="space-y-3">
-          <p className="text-sm text-ink-2">Open the authorization URL to sign in with OpenAI:</p>
+          <p className="text-sm text-ink-2">{t("settings.oauth.openAuthUrl")}</p>
 
           {/* Auth URL display + actions */}
           <div className="bg-s2 border border-edge rounded-lg p-2.5">
@@ -928,18 +946,18 @@ function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, authUrl,
                 }}
                 className="flex-1 px-3 py-1.5 bg-s1 border border-edge hover:border-brand rounded-lg text-xs text-ink-2 hover:text-ink transition-colors"
               >
-                {copied ? "Copied!" : "Copy URL"}
+                {copied ? t("settings.oauth.copied") : t("settings.oauth.copyUrl")}
               </button>
               <button
                 onClick={() => window.open(authUrl, "_blank", "width=600,height=700")}
                 className="flex-1 px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs font-medium transition-colors"
               >
-                Open in Browser
+                {t("settings.oauth.openInBrowser")}
               </button>
             </div>
           </div>
 
-          <p className="text-xs text-ink-3">Waiting for callback... After sign-in, paste the redirect URL below:</p>
+          <p className="text-xs text-ink-3">{t("settings.oauth.waitingCallback")}</p>
 
           {/* Manual callback URL input */}
           <div className="flex gap-2">
@@ -954,18 +972,18 @@ function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, authUrl,
               disabled={!manualUrl.trim()}
               className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs disabled:opacity-50"
             >
-              Submit
+              {t("common.submit")}
             </button>
           </div>
         </div>
       )}
 
       {status === "authenticating" && (
-        <p className="text-sm text-ink-2 animate-pulse">Exchanging code for tokens...</p>
+        <p className="text-sm text-ink-2 animate-pulse">{t("settings.oauth.exchangingCode")}</p>
       )}
 
       {status === "complete" && (
-        <p className="text-sm text-ok">OpenAI OAuth configured successfully</p>
+        <p className="text-sm text-ok">{t("settings.oauth.oauthSuccess")}</p>
       )}
 
       {error && (
@@ -973,7 +991,7 @@ function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, authUrl,
       )}
 
       <p className="text-[10px] text-ink-3">
-        Uses OpenAI Codex OAuth for ChatGPT Plus/Pro subscriptions. Tokens auto-refresh.
+        {t("settings.oauth.oauthNote")}
       </p>
     </div>
   );

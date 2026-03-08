@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Settings } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
@@ -16,6 +17,7 @@ const TIME_RANGE_MS: Record<string, number> = {
 };
 
 export function Usage() {
+  const { t } = useTranslation();
   const { instances } = useInstances();
   const [timeRange, setTimeRange] = useState<TimeRange>("all");
   const [customFrom, setCustomFrom] = useState("");
@@ -107,10 +109,18 @@ export function Usage() {
     }))
   );
 
+  const timeRangeLabels: Record<TimeRange, string> = {
+    "24h": "24H",
+    "7d": "7D",
+    "30d": "30D",
+    "all": t("usage.allRange"),
+    "custom": t("usage.customRange"),
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Usage & Performance</h1>
+        <h1 className="text-2xl font-bold">{t("usage.title")}</h1>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
             {(["24h", "7d", "30d", "all", "custom"] as TimeRange[]).map((r) => (
@@ -123,7 +133,7 @@ export function Usage() {
                     : "bg-s2 text-ink-2 hover:text-ink"
                 }`}
               >
-                {r === "all" ? "All" : r === "custom" ? "Custom" : r.toUpperCase()}
+                {timeRangeLabels[r]}
               </button>
             ))}
           </div>
@@ -135,7 +145,7 @@ export function Usage() {
                 onChange={(e) => setCustomFrom(e.target.value)}
                 className="px-2 py-1 text-xs bg-s2 border border-edge rounded text-ink focus:outline-none focus:border-cyan"
               />
-              <span className="text-ink-3 text-xs">to</span>
+              <span className="text-ink-3 text-xs">{t("usage.toSeparator")}</span>
               <input
                 type="datetime-local"
                 value={customTo}
@@ -149,19 +159,19 @@ export function Usage() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-          <p className="text-sm text-ink-2">Instances</p>
+          <p className="text-sm text-ink-2">{t("common.instances")}</p>
           <p className="text-2xl font-bold">{connectedInstances.length}</p>
         </div>
         <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-          <p className="text-sm text-ink-2">Total Sessions</p>
+          <p className="text-sm text-ink-2">{t("usage.totalSessions")}</p>
           <p className="text-2xl font-bold">{totalSessions}</p>
         </div>
         <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-          <p className="text-sm text-ink-2">Total Tokens</p>
+          <p className="text-sm text-ink-2">{t("usage.totalTokens")}</p>
           <p className="text-2xl font-bold">{totalTokens.toLocaleString()}</p>
         </div>
         <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-          <p className="text-sm text-ink-2">Input / Output</p>
+          <p className="text-sm text-ink-2">{t("usage.inputOutput")}</p>
           <p className="text-lg font-bold">
             <span className="text-cyan">{totalInputTokens.toLocaleString()}</span>
             <span className="text-ink-3 mx-1">/</span>
@@ -173,7 +183,7 @@ export function Usage() {
       {/* Daily Trend by Instance */}
       {dailyChart.length > 0 && (
         <div className="bg-s1 border border-edge rounded-card shadow-card p-4 mb-6">
-          <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Daily Token Usage by Instance</h3>
+          <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">{t("usage.dailyTokenUsage")}</h3>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={dailyChart} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -220,19 +230,19 @@ export function Usage() {
       {dailyRows.length > 0 && (
         <div className="bg-s1 border border-edge rounded-card overflow-hidden mb-6 shadow-card">
           <h2 className="text-sm font-semibold p-4 border-b border-edge text-ink-2 uppercase tracking-wider">
-            Daily Breakdown
-            <span className="ml-2 text-xs font-normal text-ink-3">({dailyRows.length} rows)</span>
+            {t("usage.dailyBreakdown")}
+            <span className="ml-2 text-xs font-normal text-ink-3">({dailyRows.length} {t("usage.rows")})</span>
           </h2>
           <div className="max-h-[400px] overflow-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-s1">
                 <tr className="border-b border-edge text-ink-3 text-xs">
-                  <th className="text-left p-3">Date</th>
-                  <th className="text-left p-3">Instance</th>
-                  <th className="text-right p-3">Sessions</th>
-                  <th className="text-right p-3">Input</th>
-                  <th className="text-right p-3">Output</th>
-                  <th className="text-right p-3">Total</th>
+                  <th className="text-left p-3">{t("usage.dateHeader")}</th>
+                  <th className="text-left p-3">{t("usage.instanceHeader")}</th>
+                  <th className="text-right p-3">{t("usage.sessionsHeader")}</th>
+                  <th className="text-right p-3">{t("usage.inputHeader")}</th>
+                  <th className="text-right p-3">{t("usage.outputHeader")}</th>
+                  <th className="text-right p-3">{t("usage.totalHeader")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -257,7 +267,7 @@ export function Usage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {/* Token Distribution */}
           <div className="bg-s1 border border-edge rounded-card shadow-card p-4">
-            <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Token Distribution</h3>
+            <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">{t("usage.tokenDistribution")}</h3>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={instanceStats} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -279,7 +289,7 @@ export function Usage() {
                 />
                 <Tooltip
                   contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#e2e8f0", fontSize: 12 }}
-                  formatter={(value: number, name: string) => [value.toLocaleString(), name === "inputTokens" ? "Input" : "Output"]}
+                  formatter={(value: number, name: string) => [value.toLocaleString(), name === "inputTokens" ? t("usage.inputLegend") : t("usage.outputLegend")]}
                   labelStyle={{ color: "#94a3b8" }}
                 />
                 <Bar dataKey="inputTokens" stackId="tokens" fill="#22d3ee" radius={[0, 0, 0, 0]} name="inputTokens" />
@@ -287,14 +297,14 @@ export function Usage() {
               </BarChart>
             </ResponsiveContainer>
             <div className="flex justify-center gap-4 mt-2 text-xs text-ink-3">
-              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{background:"#22d3ee"}} /> Input</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{background:"#34d399"}} /> Output</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{background:"#22d3ee"}} /> {t("usage.inputLegend")}</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded" style={{background:"#34d399"}} /> {t("usage.outputLegend")}</span>
             </div>
           </div>
 
           {/* Session Activity */}
           <div className="bg-s1 border border-edge rounded-card shadow-card p-4">
-            <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">Sessions per Instance</h3>
+            <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider mb-3">{t("usage.sessionsPerInstance")}</h3>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={instanceStats} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
@@ -314,7 +324,7 @@ export function Usage() {
                 />
                 <Tooltip
                   contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#e2e8f0", fontSize: 12 }}
-                  formatter={(value: number) => [value, "Sessions"]}
+                  formatter={(value: number) => [value, t("usage.sessionsHeader")]}
                   labelStyle={{ color: "#94a3b8" }}
                 />
                 <Bar dataKey="sessionCount" fill="#818cf8" radius={[0, 4, 4, 0]} />
@@ -326,16 +336,16 @@ export function Usage() {
 
       {instanceStats.length > 0 && (
         <div className="bg-s1 border border-edge rounded-card overflow-hidden mb-6 shadow-card">
-          <h2 className="text-lg font-semibold p-4 border-b border-edge">Per-Instance Usage</h2>
+          <h2 className="text-lg font-semibold p-4 border-b border-edge">{t("usage.perInstanceUsage")}</h2>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-edge text-ink-2">
-                <th className="text-left p-3">Instance</th>
-                <th className="text-right p-3">Sessions</th>
-                <th className="text-right p-3">Input Tokens</th>
-                <th className="text-right p-3">Output Tokens</th>
-                <th className="text-right p-3">Total Tokens</th>
-                <th className="text-left p-3">Models</th>
+                <th className="text-left p-3">{t("usage.instanceHeader")}</th>
+                <th className="text-right p-3">{t("usage.sessionsHeader")}</th>
+                <th className="text-right p-3">{t("usage.inputTokensHeader")}</th>
+                <th className="text-right p-3">{t("usage.outputTokensHeader")}</th>
+                <th className="text-right p-3">{t("usage.totalTokensHeader")}</th>
+                <th className="text-left p-3">{t("usage.modelsHeader")}</th>
               </tr>
             </thead>
             <tbody>
@@ -355,7 +365,7 @@ export function Usage() {
               ))}
               {instanceStats.length > 1 && (
                 <tr className="border-t border-edge-hi font-medium">
-                  <td className="p-3">Total</td>
+                  <td className="p-3">{t("common.total")}</td>
                   <td className="p-3 text-right">{totalSessions}</td>
                   <td className="p-3 text-right text-cyan">{totalInputTokens.toLocaleString()}</td>
                   <td className="p-3 text-right text-ok">{totalOutputTokens.toLocaleString()}</td>
@@ -370,14 +380,14 @@ export function Usage() {
 
       {modelComparison.length > 0 && (
         <div className="bg-s1 border border-edge rounded-card overflow-hidden shadow-card">
-          <h2 className="text-lg font-semibold p-4 border-b border-edge">Agent Configuration</h2>
+          <h2 className="text-lg font-semibold p-4 border-b border-edge">{t("usage.agentConfiguration")}</h2>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-edge text-ink-2">
-                <th className="text-left p-3">Instance</th>
-                <th className="text-left p-3">Agent</th>
-                <th className="text-left p-3">Model</th>
-                <th className="text-left p-3">Tools</th>
+                <th className="text-left p-3">{t("usage.instanceHeader")}</th>
+                <th className="text-left p-3">{t("usage.agentHeader")}</th>
+                <th className="text-left p-3">{t("usage.modelHeader")}</th>
+                <th className="text-left p-3">{t("usage.toolsHeader")}</th>
                 <th className="text-right p-3"></th>
               </tr>
             </thead>
@@ -393,7 +403,7 @@ export function Usage() {
                       to={`/instance/${row.instanceId}?tab=agents&agent=${row.agent}`}
                       className="inline-flex items-center gap-1 px-2 py-1 text-xs text-ink-3 hover:text-brand border border-edge rounded hover:border-brand"
                     >
-                      <Settings size={12} /> Config
+                      <Settings size={12} /> {t("usage.configAction")}
                     </Link>
                   </td>
                 </tr>

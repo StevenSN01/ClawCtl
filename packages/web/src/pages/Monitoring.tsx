@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { get } from "../lib/api";
 
 interface TopProcess {
@@ -68,6 +69,8 @@ function ProgressBar({ percent, label }: { percent: number; label: string }) {
 }
 
 function HostCard({ m }: { m: HostMetrics }) {
+  const { t } = useTranslation();
+
   if (m.error) {
     return (
       <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
@@ -75,7 +78,7 @@ function HostCard({ m }: { m: HostMetrics }) {
           <h3 className="text-lg font-semibold">{m.label}</h3>
           <span className="text-xs text-ink-3">{m.host}</span>
         </div>
-        <p className="text-danger text-sm mb-3">Failed: {m.error}</p>
+        <p className="text-danger text-sm mb-3">{t("monitoring.failed")} {m.error}</p>
         <InstanceList instances={m.instances} />
       </div>
     );
@@ -95,7 +98,7 @@ function HostCard({ m }: { m: HostMetrics }) {
             label={`CPU (${m.cpu.cores} cores)`}
           />
           <p className="text-xs text-ink-3 mt-1">
-            Load: {m.cpu.loadAvg1m.toFixed(2)} / {m.cpu.loadAvg5m.toFixed(2)}
+            {t("monitoring.loadLabel")} {m.cpu.loadAvg1m.toFixed(2)} / {m.cpu.loadAvg5m.toFixed(2)}
           </p>
         </div>
         <div>
@@ -105,7 +108,7 @@ function HostCard({ m }: { m: HostMetrics }) {
           />
         </div>
         <div>
-          <p className="text-sm text-ink-2 mb-1">Uptime</p>
+          <p className="text-sm text-ink-2 mb-1">{t("monitoring.uptime")}</p>
           <p className="text-2xl font-bold">{formatUptime(m.uptime)}</p>
         </div>
       </div>
@@ -119,17 +122,19 @@ function HostCard({ m }: { m: HostMetrics }) {
 }
 
 function TopProcessList({ processes }: { processes: TopProcess[] }) {
+  const { t } = useTranslation();
+
   return (
     <div className="border-t border-edge pt-3 mt-3">
-      <p className="text-xs text-ink-3 mb-2 uppercase tracking-wide">Top Processes</p>
+      <p className="text-xs text-ink-3 mb-2 uppercase tracking-wide">{t("monitoring.topProcesses")}</p>
       <table className="w-full text-xs">
         <thead>
           <tr className="text-ink-3">
-            <th className="text-left py-1 pr-2">PID</th>
-            <th className="text-left py-1 pr-2">User</th>
-            <th className="text-right py-1 pr-2">CPU%</th>
-            <th className="text-right py-1 pr-2">MEM%</th>
-            <th className="text-left py-1">Command</th>
+            <th className="text-left py-1 pr-2">{t("monitoring.pidHeader")}</th>
+            <th className="text-left py-1 pr-2">{t("monitoring.userHeader")}</th>
+            <th className="text-right py-1 pr-2">{t("monitoring.cpuHeader")}</th>
+            <th className="text-right py-1 pr-2">{t("monitoring.memHeader")}</th>
+            <th className="text-left py-1">{t("monitoring.commandHeader")}</th>
           </tr>
         </thead>
         <tbody>
@@ -153,12 +158,14 @@ function TopProcessList({ processes }: { processes: TopProcess[] }) {
 }
 
 function InstanceList({ instances }: { instances: HostMetrics["instances"] }) {
+  const { t } = useTranslation();
+
   if (instances.length === 0) {
-    return <p className="text-ink-3 text-sm">No instances</p>;
+    return <p className="text-ink-3 text-sm">{t("monitoring.noInstances")}</p>;
   }
   return (
     <div className="border-t border-edge pt-3">
-      <p className="text-xs text-ink-3 mb-2 uppercase tracking-wide">Instances</p>
+      <p className="text-xs text-ink-3 mb-2 uppercase tracking-wide">{t("monitoring.instancesLabel")}</p>
       <div className="space-y-1">
         {instances.map((inst) => (
           <div key={inst.id} className="flex items-center justify-between text-sm">
@@ -166,7 +173,7 @@ function InstanceList({ instances }: { instances: HostMetrics["instances"] }) {
               {statusDot(inst.status)}
               <span className="text-ink-2">{inst.label}</span>
             </span>
-            <span className="text-ink-3">{inst.sessionCount} sessions</span>
+            <span className="text-ink-3">{inst.sessionCount} {t("common.sessions")}</span>
           </div>
         ))}
       </div>
@@ -175,6 +182,7 @@ function InstanceList({ instances }: { instances: HostMetrics["instances"] }) {
 }
 
 export function Monitoring() {
+  const { t } = useTranslation();
   const [hosts, setHosts] = useState<HostMetrics[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -199,10 +207,10 @@ export function Monitoring() {
   if (loading) {
     return (
       <div>
-        <h1 className="text-2xl font-bold mb-6">Monitoring</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("monitoring.title")}</h1>
         <div className="flex items-center justify-center py-20 text-ink-3 text-sm">
           <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
-          Loading host metrics...
+          {t("monitoring.loadingMetrics")}
         </div>
       </div>
     );
@@ -210,30 +218,30 @@ export function Monitoring() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Monitoring</h1>
+      <h1 className="text-2xl font-bold mb-6">{t("monitoring.title")}</h1>
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-          <p className="text-sm text-ink-2">Hosts</p>
+          <p className="text-sm text-ink-2">{t("monitoring.hosts")}</p>
           <p className="text-2xl font-bold">{hosts.length}</p>
         </div>
         <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-          <p className="text-sm text-ink-2">Instances</p>
+          <p className="text-sm text-ink-2">{t("monitoring.instances")}</p>
           <p className="text-2xl font-bold">{connectedInstances}/{totalInstances}</p>
         </div>
         <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-          <p className="text-sm text-ink-2">Total Sessions</p>
+          <p className="text-sm text-ink-2">{t("monitoring.totalSessions")}</p>
           <p className="text-2xl font-bold">{totalSessions}</p>
         </div>
         <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-          <p className="text-sm text-ink-2">Status</p>
-          <p className="text-2xl font-bold">{error ? "Error" : "OK"}</p>
+          <p className="text-sm text-ink-2">{t("monitoring.status")}</p>
+          <p className="text-2xl font-bold">{error ? t("common.error") : t("common.ok")}</p>
         </div>
       </div>
 
       {error && (
-        <p className="text-danger text-sm mb-4">Failed to load host metrics: {error}</p>
+        <p className="text-danger text-sm mb-4">{t("monitoring.failedToLoad")} {error}</p>
       )}
 
       {/* Per-host cards */}
@@ -244,7 +252,7 @@ export function Monitoring() {
       </div>
 
       {!loading && hosts.length === 0 && (
-        <p className="text-ink-3 text-center py-8">No remote hosts configured. Add hosts in the Hosts page.</p>
+        <p className="text-ink-3 text-center py-8">{t("monitoring.noRemoteHosts")}</p>
       )}
     </div>
   );
