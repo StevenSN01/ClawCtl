@@ -38,6 +38,32 @@ function defaultModelFor(p: string): string {
   }
 }
 
+const MODELS_BY_PROVIDER: Record<string, string[]> = {
+  openai: [
+    "gpt-5.3-codex", "gpt-5.3-codex-spark",
+    "gpt-5.2", "gpt-5.2-codex", "gpt-5.2-pro",
+    "gpt-5.1", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
+    "gpt-5", "gpt-5-codex", "gpt-5-pro", "gpt-5-mini",
+    "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
+    "gpt-4o", "gpt-4o-mini",
+    "o4-mini", "o3", "o3-pro", "o3-mini", "o1", "o1-pro",
+  ],
+  anthropic: [
+    "claude-opus-4-6", "claude-sonnet-4-6",
+    "claude-opus-4-5", "claude-sonnet-4-5",
+    "claude-opus-4-1", "claude-sonnet-4-0",
+    "claude-haiku-4-5",
+    "claude-3-7-sonnet-latest",
+    "claude-3-5-sonnet-20241022", "claude-3-5-haiku-latest",
+  ],
+  azure: [
+    "gpt-5.3-codex", "gpt-5.1-codex", "gpt-4o", "gpt-4o-mini", "gpt-4",
+  ],
+  ollama: [
+    "llama3", "llama3.1", "codellama", "mistral", "mixtral", "deepseek-coder",
+  ],
+};
+
 export function Settings() {
   const { user: currentUser } = useAuth();
   const isAdmin = currentUser?.role === "admin";
@@ -52,10 +78,21 @@ export function Settings() {
   const [oauthExpiry, setOauthExpiry] = useState<number | null>(null);
   const [oauthStatus, setOauthStatus] = useState<"idle" | "starting" | "waiting" | "authenticating" | "complete" | "error">("idle");
   const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthAuthUrl, setOauthAuthUrl] = useState<string | null>(null);
   const [oauthManualUrl, setOauthManualUrl] = useState("");
-  // Model list
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
+  // Model list — fetched from backend + merged with presets
+  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({});
+  const providerModels = (() => {
+    const fetched = fetchedModels[provider] || [];
+    const presets = MODELS_BY_PROVIDER[provider] || [];
+    // Merge: fetched first (API-confirmed), then presets not already in fetched
+    const seen = new Set(fetched);
+    const merged = [...fetched];
+    for (const m of presets) {
+      if (!seen.has(m)) merged.push(m);
+    }
+    return merged;
+  })();
   // Azure-specific
   const [azResource, setAzResource] = useState("");
   const [azDeployment, setAzDeployment] = useState("");
@@ -103,6 +140,18 @@ export function Settings() {
   const [cronExpr, setCronExpr] = useState("");
   const [cronValid, setCronValid] = useState<boolean | null>(null);
 
+  // Fetch model lists from backend, periodically refresh (matches backend 10-min TTL)
+  useEffect(() => {
+    const fetchModels = () => {
+      get<{ modelsByProvider: Record<string, string[]> }>("/settings/models")
+        .then((r) => setFetchedModels(r.modelsByProvider || {}))
+        .catch(() => {});
+    };
+    fetchModels();
+    const timer = setInterval(fetchModels, 600_000); // 10 min
+    return () => clearInterval(timer);
+  }, []);
+
   useEffect(() => {
     get<Record<string, any>>("/settings").then((s) => {
       if (s.llm) {
@@ -140,17 +189,7 @@ export function Settings() {
       }).catch(() => {});
     }
 
-    // Fetch model list
-    fetchModels();
   }, [isAdmin]);
-
-  const fetchModels = () => {
-    setModelsLoading(true);
-    get<{ models: string[] }>("/settings/models")
-      .then((r) => setAvailableModels(r.models || []))
-      .catch(() => setAvailableModels([]))
-      .finally(() => setModelsLoading(false));
-  };
 
   const saveLlm = async () => {
     setSaving(true);
@@ -289,14 +328,16 @@ export function Settings() {
                   expiry={oauthExpiry}
                   status={oauthStatus}
                   error={oauthError}
+                  authUrl={oauthAuthUrl}
                   manualUrl={oauthManualUrl}
                   onManualUrlChange={setOauthManualUrl}
                   onStart={async () => {
                     setOauthStatus("starting");
                     setOauthError(null);
+                    setOauthAuthUrl(null);
                     try {
                       const r = await post<{ authUrl: string }>("/settings/oauth/openai/start", {});
-                      window.open(r.authUrl, "_blank", "width=600,height=700");
+                      setOauthAuthUrl(r.authUrl);
                       setOauthStatus("waiting");
                       // Poll for completion
                       const poll = setInterval(async () => {
@@ -388,46 +429,29 @@ export function Settings() {
             </div>
           )}
 
-          {/* Model — dropdown if models available, otherwise text input */}
+          {/* Model — two-level: provider determines the model list */}
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <label className="block text-sm text-ink-2">Model</label>
-              {(provider === "openai" || provider === "anthropic") && isAdmin && (
-                <button
-                  onClick={fetchModels}
-                  disabled={modelsLoading}
-                  className="text-[10px] text-brand hover:text-brand-light disabled:opacity-50"
-                >
-                  {modelsLoading ? "Loading..." : "Refresh list"}
-                </button>
+            <label className="block text-sm text-ink-2 mb-1">Model</label>
+            <select
+              value={providerModels.includes(model) ? model : "__custom__"}
+              onChange={(e) => { if (e.target.value !== "__custom__") setModel(e.target.value); }}
+              disabled={!isAdmin}
+              className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink disabled:opacity-50"
+            >
+              {!providerModels.includes(model) && model && (
+                <option value="__custom__">{model} (custom)</option>
               )}
-            </div>
-            {availableModels.length > 0 ? (
-              <div className="space-y-1.5">
-                <select
-                  value={availableModels.includes(model) ? model : "__custom__"}
-                  onChange={(e) => { if (e.target.value !== "__custom__") setModel(e.target.value); }}
-                  disabled={!isAdmin}
-                  className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink disabled:opacity-50"
-                >
-                  {!availableModels.includes(model) && model && (
-                    <option value="__custom__">{model} (custom)</option>
-                  )}
-                  {availableModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-                <input
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  disabled={!isAdmin}
-                  placeholder="Or type a model name"
-                  className="w-full bg-s2 border border-edge rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50"
-                />
-              </div>
-            ) : (
-              <input value={model} onChange={(e) => setModel(e.target.value)} disabled={!isAdmin} placeholder={provider === "openai" ? "gpt-5.3-codex" : provider === "anthropic" ? "claude-opus-4-6" : provider === "azure" ? "gpt-5.3-codex" : "llama3"} className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50" />
-            )}
+              {providerModels.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              disabled={!isAdmin}
+              placeholder="Or type a custom model name"
+              className="w-full bg-s2 border border-edge rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-3 focus:border-brand transition-colors disabled:opacity-50 mt-1.5"
+            />
           </div>
 
           {/* Base URL — OpenAI compatible / Ollama only (Azure auto-builds it) */}
@@ -844,17 +868,19 @@ export function Settings() {
   );
 }
 
-function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, manualUrl, onManualUrlChange, onStart, onSubmitManual }: {
+function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, authUrl, manualUrl, onManualUrlChange, onStart, onSubmitManual }: {
   isAdmin: boolean;
   hasToken: boolean;
   expiry: number | null;
   status: string;
   error: string | null;
+  authUrl: string | null;
   manualUrl: string;
   onManualUrlChange: (v: string) => void;
   onStart: () => void;
   onSubmitManual: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
   const isExpired = expiry ? expiry < Date.now() : false;
   const expiryText = expiry
     ? `${isExpired ? "Expired" : "Expires"}: ${new Date(expiry).toLocaleString()}`
@@ -886,26 +912,50 @@ function OpenAIOAuthSection({ isAdmin, hasToken, expiry, status, error, manualUr
         <p className="text-sm text-ink-2 animate-pulse">Starting OAuth flow...</p>
       )}
 
-      {status === "waiting" && (
-        <div className="space-y-2">
-          <p className="text-sm text-ink-2">Complete sign-in in the browser popup. Waiting for callback...</p>
-          <div className="border-t border-edge pt-2">
-            <p className="text-xs text-ink-3 mb-1">If the popup didn't work or ClawCtl is remote, paste the redirect URL:</p>
+      {status === "waiting" && authUrl && (
+        <div className="space-y-3">
+          <p className="text-sm text-ink-2">Open the authorization URL to sign in with OpenAI:</p>
+
+          {/* Auth URL display + actions */}
+          <div className="bg-s2 border border-edge rounded-lg p-2.5">
+            <p className="text-xs text-ink-3 font-mono break-all mb-2 select-all">{authUrl}</p>
             <div className="flex gap-2">
-              <input
-                value={manualUrl}
-                onChange={(e) => onManualUrlChange(e.target.value)}
-                placeholder="http://localhost:1455/auth/callback?code=..."
-                className="flex-1 bg-s2 border border-edge rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-3 focus:border-brand transition-colors font-mono"
-              />
               <button
-                onClick={onSubmitManual}
-                disabled={!manualUrl.trim()}
-                className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs disabled:opacity-50"
+                onClick={() => {
+                  navigator.clipboard.writeText(authUrl);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="flex-1 px-3 py-1.5 bg-s1 border border-edge hover:border-brand rounded-lg text-xs text-ink-2 hover:text-ink transition-colors"
               >
-                Submit
+                {copied ? "Copied!" : "Copy URL"}
+              </button>
+              <button
+                onClick={() => window.open(authUrl, "_blank", "width=600,height=700")}
+                className="flex-1 px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs font-medium transition-colors"
+              >
+                Open in Browser
               </button>
             </div>
+          </div>
+
+          <p className="text-xs text-ink-3">Waiting for callback... After sign-in, paste the redirect URL below:</p>
+
+          {/* Manual callback URL input */}
+          <div className="flex gap-2">
+            <input
+              value={manualUrl}
+              onChange={(e) => onManualUrlChange(e.target.value)}
+              placeholder="http://localhost:1455/auth/callback?code=..."
+              className="flex-1 bg-s2 border border-edge rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-3 focus:border-brand transition-colors font-mono"
+            />
+            <button
+              onClick={onSubmitManual}
+              disabled={!manualUrl.trim()}
+              className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs disabled:opacity-50"
+            >
+              Submit
+            </button>
           </div>
         </div>
       )}

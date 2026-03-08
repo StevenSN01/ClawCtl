@@ -42,12 +42,17 @@ describe("extractModels", () => {
     expect(result.models).toContain("claude-haiku-4-5-20251001");
     const unique = new Set(result.models);
     expect(unique.size).toBe(result.models.length);
+    // Grouped models include known providers
+    expect(result.modelsByProvider).toHaveProperty("openai");
+    expect(result.modelsByProvider).toHaveProperty("anthropic");
+    expect(result.modelsByProvider.anthropic).toContain("claude-sonnet-4-5-20250514");
   });
 
   it("handles missing agents section gracefully", () => {
     const result = extractModels({ gateway: {} });
     expect(result.defaultModel).toBe("");
     expect(result.models.length).toBeGreaterThan(0);
+    expect(Object.keys(result.modelsByProvider).length).toBeGreaterThan(0);
   });
 });
 

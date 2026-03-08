@@ -187,26 +187,27 @@ describe("Settings API — models endpoint", () => {
     app.route("/settings", settingsRoutes(db, llm));
   });
 
-  it("GET /models returns empty when not configured", async () => {
+  it("GET /models returns modelsByProvider with presets even when not configured", async () => {
     const res = await app.request("/settings/models");
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.models).toEqual([]);
+    expect(data.modelsByProvider).toBeDefined();
+    expect(data.modelsByProvider.openai).toContain("gpt-5.3-codex");
+    expect(data.modelsByProvider.anthropic).toContain("claude-opus-4-6");
   });
 
-  it("GET /models returns OPENAI_API_MODELS when openai without apiKey", async () => {
+  it("GET /models returns openai presets including older models", async () => {
     llm.configure({ provider: "openai", model: "gpt-5.1-codex", apiKey: "" });
 
     const res = await app.request("/settings/models");
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.models.length).toBeGreaterThan(0);
-    // OPENAI_API_MODELS contains the full list including older models
-    expect(data.models).toContain("gpt-5.3-codex");
-    expect(data.models).toContain("gpt-4");
+    expect(data.modelsByProvider.openai.length).toBeGreaterThan(0);
+    expect(data.modelsByProvider.openai).toContain("gpt-5.3-codex");
+    expect(data.modelsByProvider.openai).toContain("gpt-4");
   });
 
-  it("GET /models returns OPENAI_CODEX_MODELS for OAuth user", async () => {
+  it("GET /models returns openai presets for OAuth user", async () => {
     llm.configure({
       provider: "openai",
       model: "gpt-5.1-codex",
@@ -216,19 +217,17 @@ describe("Settings API — models endpoint", () => {
     const res = await app.request("/settings/models");
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.models).toContain("gpt-5.1-codex");
-    // Codex list should NOT contain API-only models like gpt-4
-    expect(data.models).not.toContain("gpt-4");
+    expect(data.modelsByProvider.openai).toContain("gpt-5.1-codex");
   });
 
-  it("GET /models returns ANTHROPIC_MODELS for anthropic without apiKey", async () => {
+  it("GET /models returns anthropic presets", async () => {
     llm.configure({ provider: "anthropic", model: "claude-opus-4-6", apiKey: "" });
 
     const res = await app.request("/settings/models");
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.models.length).toBeGreaterThan(0);
-    expect(data.models).toContain("claude-opus-4-6");
+    expect(data.modelsByProvider.anthropic.length).toBeGreaterThan(0);
+    expect(data.modelsByProvider.anthropic).toContain("claude-opus-4-6");
   });
 });
 

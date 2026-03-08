@@ -7,6 +7,8 @@ export interface GatewayConnection {
   error?: string;
   /** Version from the installed binary (via SSH), more reliable than Gateway handshake */
   binaryVersion?: string;
+  /** Original remote port before SSH tunnel rewrite (e.g. 18789) */
+  remotePort?: number;
 }
 
 export interface InstanceInfo {

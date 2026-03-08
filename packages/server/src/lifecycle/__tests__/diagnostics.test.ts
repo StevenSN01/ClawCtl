@@ -37,7 +37,7 @@ describe("diagnostic checks via install functions", () => {
     const exec = mockExec({
       "node --version": { stdout: "v22.5.0\n", stderr: "", exitCode: 0 },
       "openclaw --version": { stdout: "2026.3.3\n", stderr: "", exitCode: 0 },
-      "npm view": { stdout: "2026.3.5\n", stderr: "", exitCode: 0 },
+      "npm view": { stdout: '{"latest":"2026.3.5"}\n', stderr: "", exitCode: 0 },
     });
     const node = await checkNodeVersion(exec);
     const versions = await getVersions(exec);

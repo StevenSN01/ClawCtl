@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import WebSocket from "ws";
 import { EventEmitter } from "events";
 import type {
@@ -12,6 +13,33 @@ import type {
   ToolInfo,
   Binding,
 } from "./types.js";
+
+// --- Device identity for Gateway auth ---
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+function base64UrlEncode(buf: Buffer): string {
+  return buf.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+}
+interface DeviceIdentity { deviceId: string; publicKeyPem: string; privateKeyPem: string; }
+let cachedIdentity: DeviceIdentity | null = null;
+function getDeviceIdentity(): DeviceIdentity {
+  if (cachedIdentity) return cachedIdentity;
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const raw = (publicKey.export({ type: "spki", format: "der" }) as Buffer).subarray(ED25519_SPKI_PREFIX.length);
+  const deviceId = crypto.createHash("sha256").update(raw).digest("hex");
+  cachedIdentity = { deviceId, publicKeyPem, privateKeyPem };
+  return cachedIdentity;
+}
+function buildDeviceParams(nonce: string, token?: string) {
+  const identity = getDeviceIdentity();
+  const signedAt = Date.now();
+  const raw = (crypto.createPublicKey(identity.publicKeyPem).export({ type: "spki", format: "der" }) as Buffer).subarray(ED25519_SPKI_PREFIX.length);
+  const publicKey = base64UrlEncode(raw);
+  const payload = ["v3", identity.deviceId, "gateway-client", "backend", "operator", "operator.admin", String(signedAt), token ?? "", nonce, "node", ""].join("|");
+  const sig = crypto.sign(null, Buffer.from(payload, "utf8"), crypto.createPrivateKey(identity.privateKeyPem));
+  return { id: identity.deviceId, publicKey, signature: base64UrlEncode(sig), signedAt, nonce };
+}
 
 export class GatewayClient extends EventEmitter {
   private ws: WebSocket | null = null;
@@ -56,7 +84,7 @@ export class GatewayClient extends EventEmitter {
           if (msg.type === "event" && msg.event === "connect.challenge") {
             const nonce = msg.payload?.nonce;
             if (!nonce) return;
-            // Send connect RPC with auth token
+            // Send connect RPC with auth token + device identity
             const connectParams: Record<string, unknown> = {
               minProtocol: 3,
               maxProtocol: 3,
@@ -67,6 +95,10 @@ export class GatewayClient extends EventEmitter {
             if (this.conn.token) {
               connectParams.auth = { token: this.conn.token };
             }
+            // Add device identity — required when no shared auth token
+            try {
+              connectParams.device = buildDeviceParams(nonce, this.conn.token);
+            } catch { /* skip device identity if generation fails */ }
             this.rpc("connect", connectParams)
               .then((helloOk) => {
                 this.helloOk = helloOk;
@@ -224,6 +256,16 @@ export class GatewayClient extends EventEmitter {
   async fetchConfig(): Promise<Record<string, unknown>> {
     const r = await this.rpc("config.get", {});
     return r || {};
+  }
+
+  /** Returns the runtime model catalog — includes env-var auto-detected providers */
+  async fetchModelCatalog(): Promise<{ id: string; name: string; provider: string }[]> {
+    const r = await this.rpc("models.list", {});
+    return (r?.models || []).map((m: any) => ({
+      id: m.id,
+      name: m.name || m.id,
+      provider: m.provider || "unknown",
+    }));
   }
 
   async fetchSecurityAudit(): Promise<SecurityAuditItem[]> {

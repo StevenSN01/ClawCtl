@@ -57,7 +57,7 @@ Side-by-side config comparison with intelligent diff — flattened dot-path keys
 Structured CRUD for agents — create, edit, delete agents with a form-based UI. Edit global defaults (model, thinking depth). Apply permission templates to agents with preview. Model combobox with available model list. Restart confirmation dialog after config changes.
 
 ### Lifecycle Control
-Start, stop, and restart OpenClaw instances remotely. View and edit raw `openclaw.json` config files. Real-time log streaming (auto-detects file / journalctl --user / journalctl system). Config snapshots — create, compare, restore. Install or upgrade OpenClaw on remote hosts with Node.js version verification.
+Start, stop, and restart OpenClaw instances remotely. View and edit raw `openclaw.json` config files. Real-time log streaming (auto-detects file / journalctl --user / journalctl system). Config snapshots — create, compare, restore. Install, upgrade, or **uninstall** OpenClaw on remote hosts with Node.js version verification. Uninstall streams progress via SSE — stops processes, disables systemd services, removes the npm package, and verifies cleanup.
 
 ### Host Monitoring
 Live CPU, memory, and uptime metrics for every remote host. **Abnormal process detection** — when CPU or memory is elevated, the top offending processes are listed with PID, user, CPU%, and MEM%. Server-side 30s cache with request deduplication prevents SSH connection storms.
@@ -69,7 +69,7 @@ Cross-instance tool permission matrix — see at a glance which agents can use w
 Centralized operation log with pagination, operator filtering, and date range search. Every lifecycle action (start/stop/restart, config change, scan) is recorded with timestamps and outcomes.
 
 ### AI Assistant
-Configure your LLM provider (OpenAI / Anthropic / Azure / Ollama) and unlock an intelligent copilot that lives inside every instance page. It can:
+Configure your LLM provider (OpenAI / Anthropic / Azure / Ollama) with a two-level provider → model selection dropdown. Model lists are cached server-side (10-min TTL) with API-confirmed models merged on top of static presets. OpenAI OAuth supports both popup and manual URL copy for remote deployment scenarios. Unlock an intelligent copilot that lives inside every instance page. It can:
 
 - **Diagnose problems** — "Why can't the bhpc agent use the exec tool?" → reads config, traces permission chain, pinpoints the issue
 - **Modify configurations** — "Add a new agent called 'support' with read-only tools" → generates a config patch, creates a snapshot, applies the change
@@ -236,6 +236,7 @@ All API routes require authentication (except `/api/auth/*` and `/api/health`).
 | `/api/lifecycle/:id/restart` | POST | Restart instance |
 | `/api/lifecycle/:id/config-file` | GET, PUT | Read/write remote openclaw.json |
 | `/api/lifecycle/:id/models` | GET | Extract model list from config |
+| `/api/lifecycle/:id/providers` | GET | LLM providers (configured + auto-detected) |
 | `/api/lifecycle/:id/agents` | PUT | Update agent config (structured) |
 | `/api/lifecycle/:id/agents/:agentId` | DELETE | Remove agent from config |
 | `/api/lifecycle/:id/logs` | GET | Stream logs (SSE) |
@@ -265,7 +266,7 @@ Mounts `~/.openclaw*` directories read-only for instance auto-discovery.
 ## Testing
 
 ```bash
-npm run test:unit          # Backend unit tests (286 tests)
+npm run test:unit          # Backend unit tests (352 tests)
 npm run test:components    # Frontend component tests
 npm run test:e2e           # Playwright E2E tests
 npm run test:live          # Live integration tests (needs running OpenClaw)

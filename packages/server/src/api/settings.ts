@@ -66,89 +66,114 @@ export function settingsRoutes(db: Database.Database, llm: LlmClient) {
     return c.json({ ok: true });
   });
 
-  // --- Fetch available models from provider API ---
+  // --- Model lists (static presets + cached API results) ---
 
-  // Full model list for OpenAI API key users
-  const OPENAI_API_MODELS = [
-    "gpt-5.3-codex", "gpt-5.3-codex-spark",
-    "gpt-5.2", "gpt-5.2-chat-latest", "gpt-5.2-codex", "gpt-5.2-pro",
-    "gpt-5.1", "gpt-5.1-chat-latest", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
-    "gpt-5", "gpt-5-chat-latest", "gpt-5-codex", "gpt-5-pro", "gpt-5-mini", "gpt-5-nano",
-    "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
-    "gpt-4o", "gpt-4o-2024-05-13", "gpt-4o-2024-08-06", "gpt-4o-2024-11-20", "gpt-4o-mini",
-    "gpt-4", "gpt-4-turbo",
-    "codex-mini-latest",
-    "o4-mini", "o4-mini-deep-research",
-    "o3", "o3-pro", "o3-mini", "o3-deep-research",
-    "o1", "o1-pro",
-  ];
+  const PRESET_MODELS: Record<string, string[]> = {
+    openai: [
+      "gpt-5.3-codex", "gpt-5.3-codex-spark",
+      "gpt-5.2", "gpt-5.2-chat-latest", "gpt-5.2-codex", "gpt-5.2-pro",
+      "gpt-5.1", "gpt-5.1-chat-latest", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
+      "gpt-5", "gpt-5-chat-latest", "gpt-5-codex", "gpt-5-pro", "gpt-5-mini", "gpt-5-nano",
+      "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
+      "gpt-4o", "gpt-4o-mini",
+      "gpt-4", "gpt-4-turbo",
+      "codex-mini-latest",
+      "o4-mini", "o3", "o3-pro", "o3-mini", "o1", "o1-pro",
+    ],
+    anthropic: [
+      "claude-opus-4-6", "claude-sonnet-4-6",
+      "claude-opus-4-5", "claude-sonnet-4-5",
+      "claude-opus-4-1",
+      "claude-opus-4-0", "claude-sonnet-4-0",
+      "claude-haiku-4-5",
+      "claude-3-7-sonnet-latest",
+      "claude-3-5-sonnet-20241022", "claude-3-5-haiku-latest",
+      "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307",
+    ],
+    azure: [
+      "gpt-5.3-codex", "gpt-5.1-codex", "gpt-4o", "gpt-4o-mini", "gpt-4",
+    ],
+    ollama: [
+      "llama3", "llama3.1", "codellama", "mistral", "mixtral", "deepseek-coder",
+    ],
+  };
 
-  // Codex-compatible models for ChatGPT OAuth (chatgpt.com/backend-api)
-  const OPENAI_CODEX_MODELS = [
-    "gpt-5.3-codex", "gpt-5.3-codex-spark",
-    "gpt-5.2", "gpt-5.2-codex",
-    "gpt-5.1", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
-  ];
+  // Cache: { provider -> { models, fetchedAt } }
+  const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
+  const MODEL_CACHE_TTL = 600_000; // 10 minutes
 
-  const ANTHROPIC_MODELS = [
-    "claude-opus-4-6", "claude-sonnet-4-6",
-    "claude-opus-4-5", "claude-opus-4-5-20251101", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929",
-    "claude-opus-4-1", "claude-opus-4-1-20250805",
-    "claude-opus-4-0", "claude-opus-4-20250514", "claude-sonnet-4-0", "claude-sonnet-4-20250514",
-    "claude-haiku-4-5", "claude-haiku-4-5-20251001",
-    "claude-3-7-sonnet-latest", "claude-3-7-sonnet-20250219",
-    "claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20240620",
-    "claude-3-5-haiku-latest", "claude-3-5-haiku-20241022",
-    "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307",
-  ];
+  /** Fetch models from provider API, merge with presets, cache result */
+  async function fetchProviderModels(provider: string, config: LlmConfig): Promise<string[]> {
+    const cached = modelCache.get(provider);
+    if (cached && Date.now() - cached.fetchedAt < MODEL_CACHE_TTL) return cached.models;
+
+    const presets = PRESET_MODELS[provider] || [];
+    let fetched: string[] = [];
+
+    try {
+      if (provider === "openai" || provider === "azure") {
+        const apiKey = config.apiKey || "";
+        if (apiKey && !config.openaiOAuth?.accessToken) {
+          const { default: OpenAI } = await import("openai");
+          const baseURL = provider === "azure" && config.azure
+            ? `https://${config.azure.resourceName}.openai.azure.com/openai`
+            : config.baseUrl;
+          const client = new OpenAI({ apiKey, baseURL: baseURL || undefined });
+          const list = await client.models.list();
+          for await (const m of list) { fetched.push(m.id); }
+        }
+      } else if (provider === "anthropic") {
+        const apiKey = config.apiKey || "";
+        if (apiKey) {
+          const res = await fetch("https://api.anthropic.com/v1/models?limit=100", {
+            headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          });
+          if (res.ok) {
+            const data = await res.json() as { data?: Array<{ id: string }> };
+            fetched = (data.data || []).map((m) => m.id);
+          }
+        }
+      }
+    } catch { /* use presets only */ }
+
+    // Merge: fetched first (API-confirmed), then presets not already in fetched
+    const seen = new Set(fetched);
+    const merged = [...fetched];
+    for (const m of presets) {
+      if (!seen.has(m)) merged.push(m);
+    }
+
+    modelCache.set(provider, { models: merged, fetchedAt: Date.now() });
+    return merged;
+  }
+
+  // Background refresh on startup and every 10 minutes
+  const refreshAllModels = async () => {
+    const config = llm.getConfig();
+    if (!config) return;
+    // Refresh current provider
+    await fetchProviderModels(config.provider, config).catch(() => {});
+  };
+  setTimeout(refreshAllModels, 5_000); // 5s after startup
+  setInterval(refreshAllModels, MODEL_CACHE_TTL);
 
   app.get("/models", async (c) => {
     const config = llm.getConfig();
-    if (!config) return c.json({ models: [] });
 
-    try {
-      if (config.provider === "openai" || config.provider === "azure") {
-        // OAuth tokens lack api.model.read scope — use static list
-        if (config.openaiOAuth?.accessToken && !config.apiKey) {
-          return c.json({ models: OPENAI_CODEX_MODELS });
-        }
-        const apiKey = config.apiKey || "";
-        if (!apiKey) return c.json({ models: OPENAI_API_MODELS });
-        const { default: OpenAI } = await import("openai");
-        const baseURL = config.provider === "azure" && config.azure
-          ? `https://${config.azure.resourceName}.openai.azure.com/openai`
-          : config.baseUrl;
-        const client = new OpenAI({ apiKey, baseURL: baseURL || undefined });
-        const list = await client.models.list();
-        const models = [];
-        for await (const m of list) { models.push(m.id); }
-        models.sort();
-        return c.json({ models });
-      }
-
-      if (config.provider === "anthropic") {
-        const apiKey = config.apiKey || "";
-        if (!apiKey) return c.json({ models: ANTHROPIC_MODELS });
-        try {
-          const res = await fetch("https://api.anthropic.com/v1/models?limit=100", {
-            headers: {
-              "x-api-key": apiKey,
-              "anthropic-version": "2023-06-01",
-            },
-          });
-          if (!res.ok) return c.json({ models: ANTHROPIC_MODELS });
-          const data = await res.json() as { data?: Array<{ id: string }> };
-          const models = (data.data || []).map((m) => m.id).sort();
-          return c.json({ models: models.length ? models : ANTHROPIC_MODELS });
-        } catch {
-          return c.json({ models: ANTHROPIC_MODELS });
-        }
-      }
-
-      return c.json({ models: [] });
-    } catch {
-      return c.json({ models: [] });
+    // Build modelsByProvider: always include presets, merge with cached/fetched for configured provider
+    const result: Record<string, string[]> = {};
+    for (const [p, presets] of Object.entries(PRESET_MODELS)) {
+      result[p] = presets;
     }
+
+    // For the currently configured provider, try to get richer list
+    if (config) {
+      try {
+        result[config.provider] = await fetchProviderModels(config.provider, config);
+      } catch { /* keep presets */ }
+    }
+
+    return c.json({ modelsByProvider: result });
   });
 
   // --- OpenAI OAuth flow ---

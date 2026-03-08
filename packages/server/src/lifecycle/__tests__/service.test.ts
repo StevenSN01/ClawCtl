@@ -39,11 +39,11 @@ describe("stopProcess", () => {
 });
 
 describe("startProcess", () => {
-  it("launches openclaw with correct config dir and port", async () => {
+  it("launches openclaw with correct port", async () => {
     const execFn = vi.fn(async () => ({ stdout: "", stderr: "", exitCode: 0 }));
     const exec: CommandExecutor = { exec: execFn, async *execStream() { yield ""; } };
     await startProcess(exec, "/home/ubuntu/.openclaw", 18789);
-    expect(execFn).toHaveBeenCalledWith(expect.stringContaining("OPENCLAW_HOME"));
     expect(execFn).toHaveBeenCalledWith(expect.stringContaining("18789"));
+    expect(execFn).toHaveBeenCalledWith(expect.stringContaining("nohup openclaw"));
   });
 });

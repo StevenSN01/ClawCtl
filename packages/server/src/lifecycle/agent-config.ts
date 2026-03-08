@@ -1,14 +1,38 @@
-const COMMON_MODELS = [
-  "gpt-4o",
-  "gpt-4o-mini",
-  "gpt-4.1",
-  "gpt-4.1-mini",
-  "claude-sonnet-4-5-20250514",
-  "claude-haiku-4-5-20251001",
-  "claude-opus-4-6",
-  "deepseek-chat",
-  "deepseek-reasoner",
-];
+// Grouped by provider, newest first within each group
+const MODELS_BY_PROVIDER: Record<string, string[]> = {
+  openai: [
+    "gpt-5.3-codex",
+    "gpt-5.2-codex",
+    "gpt-5.1-codex",
+    "gpt-5.1-codex-mini",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4.1-nano",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "o4-mini",
+    "o3",
+    "o3-mini",
+  ],
+  anthropic: [
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5-20250514",
+    "claude-haiku-4-5-20251001",
+  ],
+  deepseek: [
+    "deepseek-chat",
+    "deepseek-reasoner",
+  ],
+  google: [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+  ],
+};
+
+// Flat list for backward compatibility (extractModels seed)
+const COMMON_MODELS = Object.values(MODELS_BY_PROVIDER).flat();
 
 export interface AgentFormData {
   id: string;
@@ -26,7 +50,11 @@ export interface AgentConfigPayload {
   agents: AgentFormData[];
 }
 
-export function extractModels(config: any): { models: string[]; defaultModel: string } {
+export function extractModels(config: any): {
+  models: string[];
+  modelsByProvider: Record<string, string[]>;
+  defaultModel: string;
+} {
   const agents = config?.agents || {};
   const defaultModel = agents.defaults?.model?.primary || "";
   const set = new Set<string>(COMMON_MODELS);
@@ -34,7 +62,17 @@ export function extractModels(config: any): { models: string[]; defaultModel: st
   for (const a of agents.list || []) {
     if (a.model?.primary) set.add(a.model.primary);
   }
-  return { models: [...set], defaultModel };
+  // Build grouped result: start from known providers, add unknown models to "other"
+  const grouped: Record<string, string[]> = {};
+  const knownModels = new Set<string>(COMMON_MODELS);
+  for (const [provider, list] of Object.entries(MODELS_BY_PROVIDER)) {
+    grouped[provider] = [...list];
+  }
+  const extras = [...set].filter((m) => !knownModels.has(m));
+  if (extras.length > 0) {
+    grouped.other = extras;
+  }
+  return { models: [...set], modelsByProvider: grouped, defaultModel };
 }
 
 export function mergeAgentConfig(config: any, payload: AgentConfigPayload): any {
@@ -42,9 +80,17 @@ export function mergeAgentConfig(config: any, payload: AgentConfigPayload): any 
   if (!config.agents.defaults) config.agents.defaults = {};
   if (!config.agents.list) config.agents.list = [];
 
-  if (!config.agents.defaults.model) config.agents.defaults.model = {};
-  config.agents.defaults.model.primary = payload.defaults.model;
-  config.agents.defaults.thinkingDefault = payload.defaults.thinkingDefault;
+  if (payload.defaults.model) {
+    if (!config.agents.defaults.model) config.agents.defaults.model = {};
+    config.agents.defaults.model.primary = payload.defaults.model;
+  } else {
+    delete config.agents.defaults.model;
+  }
+  if (payload.defaults.thinkingDefault) {
+    config.agents.defaults.thinkingDefault = payload.defaults.thinkingDefault;
+  } else {
+    delete config.agents.defaults.thinkingDefault;
+  }
 
   const existingMap = new Map<string, any>();
   for (const a of config.agents.list) {
@@ -54,7 +100,11 @@ export function mergeAgentConfig(config: any, payload: AgentConfigPayload): any 
   config.agents.list = payload.agents.map((input) => {
     const existing = existingMap.get(input.id);
     if (existing) {
-      existing.model = { ...existing.model, primary: input.model };
+      if (input.model) {
+        existing.model = { ...existing.model, primary: input.model };
+      } else {
+        delete existing.model;
+      }
       if (input.thinkingDefault) {
         existing.thinkingDefault = input.thinkingDefault;
       } else {
@@ -77,7 +127,8 @@ export function mergeAgentConfig(config: any, payload: AgentConfigPayload): any 
       existing.tools.fs.workspaceOnly = input.fsWorkspaceOnly;
       return existing;
     }
-    const entry: any = { id: input.id, model: { primary: input.model } };
+    const entry: any = { id: input.id };
+    if (input.model) entry.model = { primary: input.model };
     if (input.thinkingDefault) entry.thinkingDefault = input.thinkingDefault;
     if (input.workspace) entry.workspace = input.workspace;
     const tools: any = { allow: input.toolsAllow };

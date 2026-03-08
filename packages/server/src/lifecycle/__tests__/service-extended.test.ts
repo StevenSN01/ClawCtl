@@ -33,11 +33,11 @@ describe("stopProcess", () => {
 });
 
 describe("startProcess", () => {
-  it("includes OPENCLAW_HOME env var in command", async () => {
+  it("uses --profile flag for non-default config dir", async () => {
     const execFn = vi.fn(async () => ({ stdout: "", stderr: "", exitCode: 0 }));
     const exec: CommandExecutor = { exec: execFn, async *execStream() { yield ""; } };
-    await startProcess(exec, "/home/user/.openclaw", 18789);
-    expect(execFn).toHaveBeenCalledWith(expect.stringContaining('OPENCLAW_HOME="/home/user/.openclaw"'));
+    await startProcess(exec, "/home/user/.openclaw-feishu", 18789);
+    expect(execFn).toHaveBeenCalledWith(expect.stringContaining("--profile feishu"));
   });
 
   it("includes correct port in command", async () => {

@@ -19,7 +19,8 @@ vi.mock("../../lifecycle/service.js", () => ({
 vi.mock("../../lifecycle/install.js", () => ({
   checkNodeVersion: vi.fn(),
   getVersions: vi.fn(),
-  installOpenClaw: vi.fn(),
+  streamInstall: vi.fn(),
+  streamUninstall: vi.fn(),
 }));
 
 vi.mock("../../lifecycle/agent-config.js", () => ({
@@ -46,7 +47,7 @@ import { makeInstanceInfo } from "../../__tests__/helpers/fixtures.js";
 import { mockAuthMiddleware } from "../../__tests__/helpers/mock-auth.js";
 import { getExecutor, getHostExecutor } from "../../executor/factory.js";
 import { getProcessStatus, stopProcess, startProcess, restartProcess } from "../../lifecycle/service.js";
-import { checkNodeVersion, getVersions, installOpenClaw } from "../../lifecycle/install.js";
+import { checkNodeVersion, getVersions, streamInstall } from "../../lifecycle/install.js";
 import { readRemoteConfig, writeRemoteConfig } from "../../lifecycle/config.js";
 import { extractModels, mergeAgentConfig, removeAgent } from "../../lifecycle/agent-config.js";
 
@@ -161,7 +162,7 @@ describe("Lifecycle API routes", () => {
       expect(res.status).toBe(200);
       const data = await res.json() as any;
       expect(data.ok).toBe(true);
-      expect(startProcess).toHaveBeenCalledWith(mockExecutor, "$HOME/.openclaw-main", 18789);
+      expect(startProcess).toHaveBeenCalledWith(mockExecutor, "$HOME/.openclaw-main", 18789, "main");
     });
 
     it("returns 404 for unknown instance", async () => {
@@ -260,8 +261,8 @@ describe("Lifecycle API routes", () => {
   });
 
   describe("POST /host/:hostId/install", () => {
-    it("runs install and returns result", async () => {
-      vi.mocked(installOpenClaw).mockResolvedValue({ success: true, output: "installed openclaw@1.3.0" });
+    it("returns SSE stream for install", async () => {
+      vi.mocked(streamInstall).mockImplementation(async (_exec, _emit, _version) => true);
 
       const res = await app.request("/lifecycle/host/local/install", {
         method: "POST",
@@ -269,27 +270,26 @@ describe("Lifecycle API routes", () => {
         body: JSON.stringify({ version: "1.3.0" }),
       });
       expect(res.status).toBe(200);
-      const data = await res.json() as any;
-      expect(data.success).toBe(true);
-      expect(data.output).toContain("openclaw@1.3.0");
-      expect(installOpenClaw).toHaveBeenCalledWith(mockExecutor, "1.3.0");
+      expect(res.headers.get("content-type")).toContain("text/event-stream");
+    });
+
+    it("passes version to streamInstall", async () => {
+      vi.mocked(streamInstall).mockImplementation(async (_exec, _emit, _version) => true);
+
+      await app.request("/lifecycle/host/local/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version: "1.3.0" }),
+      });
+      // streamInstall is called with (exec, emitFn, version)
+      expect(streamInstall).toHaveBeenCalledWith(mockExecutor, expect.any(Function), "1.3.0");
     });
 
     it("installs latest when no version specified", async () => {
-      vi.mocked(installOpenClaw).mockResolvedValue({ success: true, output: "done" });
-
-      const res = await app.request("/lifecycle/host/local/install", { method: "POST" });
-      expect(res.status).toBe(200);
-      expect(installOpenClaw).toHaveBeenCalledWith(mockExecutor, undefined);
-    });
-
-    it("logs operation to database", async () => {
-      vi.mocked(installOpenClaw).mockResolvedValue({ success: true, output: "ok" });
+      vi.mocked(streamInstall).mockImplementation(async (_exec, _emit, _version) => true);
 
       await app.request("/lifecycle/host/local/install", { method: "POST" });
-      const rows = db.prepare("SELECT * FROM operations WHERE type = 'lifecycle.install'").all() as any[];
-      expect(rows).toHaveLength(1);
-      expect(rows[0].status).toBe("success");
+      expect(streamInstall).toHaveBeenCalledWith(mockExecutor, expect.any(Function), undefined);
     });
   });
 
@@ -399,7 +399,7 @@ describe("Lifecycle API routes", () => {
     it("returns extracted models", async () => {
       const mockConfig = { agents: { defaults: { model: { primary: "gpt-4o" } }, list: [] } };
       vi.mocked(readRemoteConfig).mockResolvedValue(mockConfig);
-      const modelsResult = { models: ["gpt-4o", "gpt-4o-mini"], defaultModel: "gpt-4o" };
+      const modelsResult = { models: ["gpt-4o", "gpt-4o-mini"], modelsByProvider: { openai: ["gpt-4o", "gpt-4o-mini"] }, defaultModel: "gpt-4o" };
       vi.mocked(extractModels).mockReturnValue(modelsResult);
 
       const res = await app.request("/lifecycle/ssh-1-main/models");

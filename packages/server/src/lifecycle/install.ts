@@ -66,6 +66,41 @@ export interface InstallStep {
 
 type EmitFn = (event: InstallStep) => Promise<void>;
 
+/** Run a long command via nohup so it survives SSH disconnects.
+ *  Polls for completion every 3s. Returns stdout + exit code. */
+async function execLong(
+  exec: CommandExecutor,
+  command: string,
+  timeout: number = 180_000,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const id = `clawctl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const logFile = `/tmp/${id}.log`;
+  const rcFile = `/tmp/${id}.rc`;
+
+  // Start in background: run command, write exit code to rcFile when done
+  await exec.exec(
+    `nohup bash -c '${command.replace(/'/g, "'\\''")}; echo $? > ${rcFile}' > ${logFile} 2>&1 &`,
+  );
+
+  // Poll for completion
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const rcR = await exec.exec(`cat ${rcFile} 2>/dev/null`);
+    if (rcR.exitCode === 0 && rcR.stdout.trim() !== "") {
+      // Done — read log and cleanup
+      const logR = await exec.exec(`cat ${logFile} 2>/dev/null`);
+      const exitCode = parseInt(rcR.stdout.trim()) || 0;
+      await exec.exec(`rm -f ${logFile} ${rcFile}`);
+      return { stdout: logR.stdout, stderr: "", exitCode };
+    }
+  }
+
+  // Timeout — kill and cleanup
+  await exec.exec(`pkill -f '${id}' 2>/dev/null; rm -f ${logFile} ${rcFile}`);
+  return { stdout: "", stderr: "Command timed out", exitCode: 124 };
+}
+
 async function ensureNodeJs(exec: CommandExecutor, emit: EmitFn): Promise<boolean> {
   await emit({ step: "Check Node.js", status: "running" });
   const node = await checkNodeVersion(exec);
@@ -114,7 +149,7 @@ async function ensureNodeJs(exec: CommandExecutor, emit: EmitFn): Promise<boolea
   // Try with sudo first, fall back to direct if no sudo
   const hasSudo = (await exec.exec("command -v sudo >/dev/null 2>&1 && echo yes")).stdout.trim() === "yes";
   const prefix = hasSudo ? "sudo " : "";
-  const r = await exec.exec(`${prefix}bash -c '${installCmd.replace(/'/g, "'\\''")}'`, { timeout: 180_000 });
+  const r = await execLong(exec, `${prefix}bash -c '${installCmd.replace(/'/g, "'\\''")}'`, 180_000);
 
   if (r.exitCode !== 0) {
     await emit({ step: "Install Node.js", status: "error", detail: (r.stderr || r.stdout).slice(0, 200) });
@@ -144,7 +179,7 @@ async function ensureNpm(exec: CommandExecutor, emit: EmitFn): Promise<boolean> 
   const hasSudo = (await exec.exec("command -v sudo >/dev/null 2>&1 && echo yes")).stdout.trim() === "yes";
   const prefix = hasSudo ? "sudo " : "";
   // Try corepack or direct install
-  const install = await exec.exec(`${prefix}corepack enable 2>/dev/null || ${prefix}apt-get install -y -qq npm 2>/dev/null || ${prefix}yum install -y npm 2>/dev/null`, { timeout: 60_000 });
+  await execLong(exec, `${prefix}corepack enable 2>/dev/null || ${prefix}apt-get install -y -qq npm 2>/dev/null || ${prefix}yum install -y npm 2>/dev/null`, 60_000);
 
   const verify = await exec.exec("npm --version 2>/dev/null");
   if (verify.exitCode === 0 && verify.stdout.trim()) {
@@ -154,6 +189,64 @@ async function ensureNpm(exec: CommandExecutor, emit: EmitFn): Promise<boolean> 
 
   await emit({ step: "Check npm", status: "error", detail: "Could not install npm" });
   return false;
+}
+
+export async function streamUninstall(
+  exec: CommandExecutor,
+  emit: EmitFn,
+): Promise<boolean> {
+  // Step 1: Check if openclaw is installed
+  await emit({ step: "Check installation", status: "running" });
+  const r = await exec.exec("openclaw --version 2>/dev/null");
+  if (r.exitCode !== 0 || !r.stdout.trim()) {
+    await emit({ step: "Check installation", status: "done", detail: "Not installed, nothing to do" });
+    return true;
+  }
+  await emit({ step: "Check installation", status: "done", detail: `v${r.stdout.trim()}` });
+
+  // Step 2: Stop running processes
+  await emit({ step: "Stop processes", status: "running" });
+  const pids = await exec.exec("pgrep -f 'openclaw.*--port' 2>/dev/null");
+  if (pids.exitCode === 0 && pids.stdout.trim()) {
+    await exec.exec("pkill -f 'openclaw.*--port' 2>/dev/null; true");
+    await emit({ step: "Stop processes", status: "done", detail: "Stopped running gateway processes" });
+  } else {
+    await emit({ step: "Stop processes", status: "done", detail: "No running processes" });
+  }
+
+  // Step 3: Disable systemd services if any
+  await emit({ step: "Disable services", status: "running" });
+  const units = await exec.exec("systemctl --user list-unit-files 'openclaw-gateway*.service' --no-legend 2>/dev/null");
+  if (units.exitCode === 0 && units.stdout.trim()) {
+    const serviceNames = units.stdout.trim().split("\n").map(l => l.split(/\s+/)[0]).filter(Boolean);
+    for (const svc of serviceNames) {
+      await exec.exec(`systemctl --user stop ${svc} 2>/dev/null; systemctl --user disable ${svc} 2>/dev/null; true`);
+    }
+    await emit({ step: "Disable services", status: "done", detail: `Disabled ${serviceNames.length} service(s)` });
+  } else {
+    await emit({ step: "Disable services", status: "skipped", detail: "No systemd services found" });
+  }
+
+  // Step 4: Uninstall npm package
+  await emit({ step: "Uninstall openclaw", status: "running" });
+  const hasSudo = (await exec.exec("command -v sudo >/dev/null 2>&1 && echo yes")).stdout.trim() === "yes";
+  const prefix = hasSudo ? "sudo " : "";
+  const uninstall = await exec.exec(`${prefix}npm rm -g openclaw`, { timeout: 60_000 });
+  if (uninstall.exitCode !== 0) {
+    await emit({ step: "Uninstall openclaw", status: "error", detail: (uninstall.stderr || uninstall.stdout).slice(0, 200) });
+    return false;
+  }
+  await emit({ step: "Uninstall openclaw", status: "done" });
+
+  // Step 5: Verify
+  await emit({ step: "Verify removal", status: "running" });
+  const verify = await exec.exec("openclaw --version 2>/dev/null");
+  if (verify.exitCode === 0 && verify.stdout.trim()) {
+    await emit({ step: "Verify removal", status: "error", detail: "openclaw still found after uninstall" });
+    return false;
+  }
+  await emit({ step: "Verify removal", status: "done", detail: "openclaw removed successfully" });
+  return true;
 }
 
 export async function streamInstall(
@@ -167,10 +260,12 @@ export async function streamInstall(
   // Step 2: npm
   if (!(await ensureNpm(exec, emit))) return false;
 
-  // Step 3: Install OpenClaw
+  // Step 3: Install OpenClaw (nohup — survives SSH disconnect)
   const pkg = version ? `openclaw@${version}` : "openclaw@latest";
   await emit({ step: `Install ${pkg}`, status: "running" });
-  const r = await exec.exec(`npm i -g ${pkg}`, { timeout: 120_000 });
+  const hasSudo = (await exec.exec("command -v sudo >/dev/null 2>&1 && echo yes")).stdout.trim() === "yes";
+  const sudoPrefix = hasSudo ? "sudo " : "";
+  const r = await execLong(exec, `${sudoPrefix}npm i -g ${pkg}`, 180_000);
   if (r.exitCode !== 0) {
     await emit({ step: `Install ${pkg}`, status: "error", detail: (r.stderr || r.stdout).slice(0, 200) });
     return false;

@@ -103,11 +103,15 @@ export async function ensureTunnel(
     }
   }
 
-  // Handle SSH disconnect — clean up tunnel
+  // Handle SSH disconnect — clean up tunnel so it can be recreated
   sshConn.on("close", () => {
-    console.log(`[tunnel] SSH closed for ${host.host}:${remotePort}`);
+    console.log(`[tunnel] SSH closed for ${host.host}:${remotePort} — tunnel removed, will be rebuilt on reconnect`);
     server.close();
     activeTunnels.delete(key);
+  });
+
+  sshConn.on("error", (err) => {
+    console.warn(`[tunnel] SSH error for ${host.host}:${remotePort}: ${err.message}`);
   });
 
   activeTunnels.set(key, { localPort: boundPort, remotePort, sshConn, server });

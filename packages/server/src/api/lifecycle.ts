@@ -7,10 +7,11 @@ import { requireWrite } from "../auth/middleware.js";
 import { auditLog } from "../audit.js";
 import { getExecutor, getHostExecutor } from "../executor/factory.js";
 import { getProcessStatus, stopProcess, startProcess, restartProcess } from "../lifecycle/service.js";
-import { checkNodeVersion, getVersions, streamInstall } from "../lifecycle/install.js";
+import { checkNodeVersion, getVersions, streamInstall, streamUninstall } from "../lifecycle/install.js";
 import { readRemoteConfig, writeRemoteConfig, getConfigDir, profileFromInstanceId } from "../lifecycle/config.js";
 import { SnapshotStore } from "../lifecycle/snapshot.js";
 import { extractModels, mergeAgentConfig, removeAgent } from "../lifecycle/agent-config.js";
+import { getOAuthStatus, clearOAuthFlow } from "../llm/openai-oauth.js";
 
 const VERSION_CACHE_TTL = 60_000; // 60s
 const versionCache = new Map<string, { data: any; time: number }>();
@@ -66,17 +67,21 @@ export function lifecycleRoutes(hostStore: HostStore, manager: InstanceManager, 
 
   app.post("/:id/start", async (c) => {
     const id = c.req.param("id");
+    console.log(`[lifecycle] start request for ${id}`);
     const inst = manager.get(id);
-    if (!inst) return c.json({ error: "instance not found" }, 404);
+    if (!inst) { console.log(`[lifecycle] instance ${id} not found`); return c.json({ error: "instance not found" }, 404); }
     const port = parsePortFromInstance(inst);
     const profile = profileFromInstanceId(id);
     const configDir = getConfigDir(profile);
     const exec = getExecutor(id, hostStore);
+    console.log(`[lifecycle] starting ${id}: port=${port}, profile=${profile}, configDir=${configDir}`);
     try {
-      await startProcess(exec, configDir, port);
+      await startProcess(exec, configDir, port, profile);
+      console.log(`[lifecycle] started ${id} OK`);
       auditLog(db, c, "lifecycle.start", `Started on port ${port}`, id);
       return c.json({ ok: true });
     } catch (err: any) {
+      console.error(`[lifecycle] start ${id} FAILED:`, err.message);
       auditLog(db, c, "lifecycle.start", `FAILED to start on port ${port}: ${err.message}`, id);
       return c.json({ error: err.message }, 500);
     }
@@ -187,6 +192,134 @@ export function lifecycleRoutes(hostStore: HostStore, manager: InstanceManager, 
     }
   });
 
+  // --- LLM Provider config (models.providers) ---
+
+  // Well-known provider env vars (subset of OpenClaw's PROVIDER_ENV_VARS)
+  const PROVIDER_ENV_CHECK: Record<string, string> = {
+    openai: "OPENAI_API_KEY",
+    anthropic: "ANTHROPIC_API_KEY",
+    google: "GEMINI_API_KEY",
+    deepseek: "DEEPSEEK_API_KEY",
+    xai: "XAI_API_KEY",
+    mistral: "MISTRAL_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
+    together: "TOGETHER_API_KEY",
+  };
+
+  app.get("/:id/providers", async (c) => {
+    const id = c.req.param("id");
+    if (!manager.get(id)) return c.json({ error: "instance not found" }, 404);
+    const profile = profileFromInstanceId(id);
+    const configDir = getConfigDir(profile);
+    const exec = getExecutor(id, hostStore);
+    try {
+      const config = await readRemoteConfig(exec, configDir);
+      const providers = config?.models?.providers || {};
+      // Detect auth-profile-based providers (from `openclaw login` / OAuth)
+      // + env-var-based providers from the running gateway process
+      const envVarList = Object.values(PROVIDER_ENV_CHECK).join(" ");
+      const detectCmd = [
+        // 1) Auth profiles: scan agent dirs for auth-profiles.json
+        `for f in ${configDir}/agents/*/agent/auth-profiles.json; do`,
+        `  [ -f "$f" ] && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); [print("auth:"+k) for k in d.get("profiles",{}).keys()]' "$f" 2>/dev/null`,
+        `done`,
+        // 2) Env vars: check gateway process env, fallback to login shell
+        `pid=$(pgrep -f 'openclaw.*gateway' 2>/dev/null | head -1)`,
+        `if [ -n "$pid" ] && [ -r /proc/$pid/environ ]; then`,
+        `  env_data=$(tr '\\0' '\\n' < /proc/$pid/environ)`,
+        `  for v in ${envVarList}; do echo "$env_data" | grep -q "^$v=" && echo "env:$v"; done`,
+        `else`,
+        `  bash -lc 'for v in ${envVarList}; do [ -n "$(printenv $v 2>/dev/null)" ] && echo "env:$v"; done'`,
+        `fi`,
+      ].join("\n");
+      const detectedProviders: { name: string; source: string }[] = [];
+      try {
+        const r = await exec.exec(detectCmd + "\ntrue"); // ensure exit 0
+        if (r.stdout.trim()) {
+          const lines = r.stdout.trim().split("\n").map((s: string) => s.trim()).filter(Boolean);
+          const seen = new Set<string>();
+          for (const line of lines) {
+            if (line.startsWith("auth:")) {
+              // e.g. "auth:openai-codex:default" → provider "openai"
+              const profileKey = line.slice(5); // "openai-codex:default"
+              const providerPart = profileKey.split(":")[0]; // "openai-codex"
+              const name = providerPart.replace(/-codex$/, "").replace(/-responses$/, "");
+              if (!seen.has(name) && !providers[name]) {
+                seen.add(name);
+                detectedProviders.push({ name, source: `auth profile (${profileKey})` });
+              }
+            } else if (line.startsWith("env:")) {
+              const envVar = line.slice(4);
+              for (const [name, ev] of Object.entries(PROVIDER_ENV_CHECK)) {
+                if (ev === envVar && !seen.has(name) && !providers[name]) {
+                  seen.add(name);
+                  detectedProviders.push({ name, source: `env (${envVar})` });
+                }
+              }
+            }
+          }
+        }
+      } catch { /* SSH check failed — skip detection */ }
+      return c.json({ providers, detectedProviders });
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  app.put("/:id/providers", async (c) => {
+    const id = c.req.param("id");
+    if (!manager.get(id)) return c.json({ error: "instance not found" }, 404);
+    const profile = profileFromInstanceId(id);
+    const configDir = getConfigDir(profile);
+    const exec = getExecutor(id, hostStore);
+    const { providers } = await c.req.json<{ providers: Record<string, any> }>();
+    try {
+      const config = await readRemoteConfig(exec, configDir);
+      if (!config.models) config.models = {};
+      config.models.providers = providers;
+      await writeRemoteConfig(exec, configDir, config);
+      auditLog(db, c, "lifecycle.providers", "LLM providers updated", id);
+      return c.json({ ok: true });
+    } catch (err: any) {
+      auditLog(db, c, "lifecycle.providers", `FAILED: ${err.message}`, id);
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
+  // Save OAuth tokens to instance's provider config
+  // (Reuses global OAuth flow from /settings/oauth/openai/*)
+  app.post("/:id/providers/oauth/save", async (c) => {
+    const id = c.req.param("id");
+    if (!manager.get(id)) return c.json({ error: "instance not found" }, 404);
+    const status = getOAuthStatus();
+    if (status.status !== "complete" || !status.credentials) {
+      return c.json({ error: "No completed OAuth credentials" }, 400);
+    }
+    const profile = profileFromInstanceId(id);
+    const configDir = getConfigDir(profile);
+    const exec = getExecutor(id, hostStore);
+    try {
+      const config = await readRemoteConfig(exec, configDir);
+      if (!config.models) config.models = {};
+      if (!config.models.providers) config.models.providers = {};
+      const existing = config.models.providers.openai || {};
+      config.models.providers.openai = {
+        ...existing,
+        baseUrl: existing.baseUrl || "https://api.openai.com/v1",
+        auth: "oauth",
+        apiKey: status.credentials.accessToken,
+        _oauthRefreshToken: status.credentials.refreshToken,
+        _oauthExpiresAt: status.credentials.expiresAt,
+      };
+      await writeRemoteConfig(exec, configDir, config);
+      clearOAuthFlow();
+      auditLog(db, c, "lifecycle.providers.oauth", "OpenAI OAuth configured", id);
+      return c.json({ ok: true, expiresAt: status.credentials.expiresAt });
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  });
+
   // --- Available versions (fetched locally, not from remote host) ---
 
   const availableVersionsCache: { data: any; time: number } = { data: null, time: 0 };
@@ -254,18 +387,163 @@ export function lifecycleRoutes(hostStore: HostStore, manager: InstanceManager, 
     const { version } = await c.req.json().catch(() => ({ version: undefined }));
     const exec = getHostExecutor(hostId, hostStore);
 
-    return stream(c, async (s) => {
-      c.header("Content-Type", "text/event-stream");
-      c.header("Cache-Control", "no-cache");
+    c.header("Content-Type", "text/event-stream");
+    c.header("Cache-Control", "no-cache");
 
+    return stream(c, async (s) => {
       const emit = async (step: { step: string; status: string; detail?: string }) => {
         await s.write(`data: ${JSON.stringify(step)}\n\n`);
       };
 
-      const success = await streamInstall(exec, emit, version);
+      let success = false;
+      try {
+        success = await streamInstall(exec, emit, version);
+      } catch (err: any) {
+        const detail = err.message?.slice(0, 300) || "Unknown error";
+        await emit({ step: "Connection error", status: "error", detail });
+      }
       auditLog(db, c, "lifecycle.install", `${success ? "Installed" : "Install failed"} openclaw${version ? `@${version}` : ""}`, String(hostId));
       await s.write(`data: ${JSON.stringify({ done: true, success })}\n\n`);
     });
+  });
+
+  // --- Uninstall OpenClaw from a host ---
+
+  app.post("/host/:hostId/uninstall", async (c) => {
+    const hostId = c.req.param("hostId") === "local" ? "local" as const : parseInt(c.req.param("hostId"));
+    const exec = getHostExecutor(hostId, hostStore);
+
+    c.header("Content-Type", "text/event-stream");
+    c.header("Cache-Control", "no-cache");
+
+    return stream(c, async (s) => {
+      const emit = async (step: { step: string; status: string; detail?: string }) => {
+        await s.write(`data: ${JSON.stringify(step)}\n\n`);
+      };
+
+      let success = false;
+      try {
+        success = await streamUninstall(exec, emit);
+      } catch (err: any) {
+        const detail = err.message?.slice(0, 300) || "Unknown error";
+        await emit({ step: "Connection error", status: "error", detail });
+      }
+      auditLog(db, c, "lifecycle.uninstall", `${success ? "Uninstalled" : "Uninstall failed"} openclaw`, String(hostId));
+      await s.write(`data: ${JSON.stringify({ done: true, success })}\n\n`);
+    });
+  });
+
+  // --- Initialize gateway on a host where OpenClaw is installed but no gateway running ---
+
+  app.post("/host/:hostId/init-gateway", async (c) => {
+    const hostId = c.req.param("hostId") === "local" ? "local" as const : parseInt(c.req.param("hostId"));
+    const { port, token, profile } = await c.req.json().catch(() => ({} as any));
+    const exec = getHostExecutor(hostId, hostStore);
+
+    // Verify openclaw is installed
+    const ver = await exec.exec("openclaw --version 2>/dev/null");
+    if (ver.exitCode !== 0 || !ver.stdout.trim()) {
+      return c.json({ error: "OpenClaw is not installed on this host" }, 400);
+    }
+
+    const gwPort = parseInt(port) || 18789;
+    const profileName = profile && profile !== "default" ? profile : undefined;
+    const configDir = profileName ? `~/.openclaw-${profileName}` : "~/.openclaw";
+    const xdgPrefix = `export XDG_RUNTIME_DIR=/run/user/$(id -u) 2>/dev/null; `;
+
+    // Create minimal config file so discovery can find this instance
+    const minimalConfig = JSON.stringify({
+      gateway: {
+        port: gwPort,
+        mode: "local",
+        controlUi: { dangerouslyAllowHostHeaderOriginFallback: true },
+        ...(token ? { auth: { token } } : {}),
+      },
+    }, null, 2);
+    await exec.exec(`mkdir -p ${configDir} && cat > ${configDir}/openclaw.json << 'CLAWCTL_CFG'\n${minimalConfig}\nCLAWCTL_CFG`);
+
+    // Find openclaw binary path
+    const whichR = await exec.exec("which openclaw");
+    const binPath = whichR.stdout.trim() || "/usr/bin/openclaw";
+
+    // Build the ExecStart command for the service
+    const execParts = [binPath];
+    if (profile) execParts.push(`--profile ${profile}`);
+    execParts.push(`gateway run --port ${gwPort} --bind lan --allow-unconfigured`);
+    if (token) execParts.push(`--token '${token.replace(/'/g, "'\\''")}'`);
+    const execStart = execParts.join(" ");
+
+    // Determine service name
+    const svcSuffix = profile && profile !== "default" ? `-${profile}` : "";
+    const svcName = `openclaw-gateway${svcSuffix}.service`;
+
+    // Ensure linger is enabled for systemctl --user to survive logout
+    const hasSudo = (await exec.exec("command -v sudo >/dev/null 2>&1 && echo yes")).stdout.trim() === "yes";
+    if (hasSudo) {
+      const whoami = (await exec.exec("whoami")).stdout.trim();
+      await exec.exec(`sudo loginctl enable-linger ${whoami} 2>/dev/null; true`);
+    }
+
+    // Create systemd user unit file
+    const unitContent = `[Unit]
+Description=OpenClaw Gateway${svcSuffix ? ` (${profile})` : ""}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${execStart}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target`;
+
+    const setupCmd = [
+      "mkdir -p ~/.config/systemd/user",
+      `cat > ~/.config/systemd/user/${svcName} << 'CLAWCTL_UNIT'\n${unitContent}\nCLAWCTL_UNIT`,
+      `${xdgPrefix} systemctl --user daemon-reload`,
+      `${xdgPrefix} systemctl --user enable ${svcName}`,
+      `${xdgPrefix} systemctl --user start ${svcName}`,
+    ].join(" && ");
+
+    const installR = await exec.exec(setupCmd, { timeout: 30_000 });
+    if (installR.exitCode !== 0) {
+      return c.json({ error: `Gateway setup failed: ${(installR.stderr || installR.stdout).slice(0, 300)}` }, 500);
+    }
+
+    // Wait and verify
+    await new Promise((r) => setTimeout(r, 2000));
+    const check = await exec.exec(`${xdgPrefix} systemctl --user is-active ${svcName} 2>/dev/null`);
+    if (check.stdout.trim() !== "active") {
+      const log = await exec.exec(`${xdgPrefix} journalctl --user -u ${svcName} -n 10 --no-pager 2>/dev/null`);
+      return c.json({ error: `Gateway not active: ${log.stdout.slice(0, 300)}` }, 500);
+    }
+
+    auditLog(db, c, "lifecycle.init-gateway", `Initialized gateway on host ${hostId} port=${gwPort}`, String(hostId));
+    return c.json({ ok: true, version: ver.stdout.trim() });
+  });
+
+  // --- Install status check (for recovery after stream disconnect) ---
+
+  app.get("/host/:hostId/install-status", async (c) => {
+    const hostId = c.req.param("hostId") === "local" ? "local" as const : parseInt(c.req.param("hostId"));
+    const exec = getHostExecutor(hostId, hostStore);
+    try {
+      const [verR, procR] = await Promise.all([
+        exec.exec("openclaw --version 2>/dev/null"),
+        exec.exec("ps aux | grep 'npm.*[i]nstall.*openclaw\\|npm.*[i] .*openclaw' | grep -v grep 2>/dev/null"),
+      ]);
+      if (verR.exitCode === 0 && verR.stdout.trim()) {
+        return c.json({ status: "installed", version: verR.stdout.trim() });
+      }
+      if (procR.exitCode === 0 && procR.stdout.trim()) {
+        return c.json({ status: "installing", detail: procR.stdout.trim().slice(0, 200) });
+      }
+      return c.json({ status: "not_installed" });
+    } catch (err: any) {
+      return c.json({ status: "error", detail: err.message }, 500);
+    }
   });
 
   // --- Logs (SSE stream) ---
@@ -403,6 +681,8 @@ export function lifecycleRoutes(hostStore: HostStore, manager: InstanceManager, 
 }
 
 function parsePortFromInstance(inst: any): number {
+  // Prefer remotePort (original port before SSH tunnel rewrite)
+  if (inst.connection.remotePort) return inst.connection.remotePort;
   try {
     const url = new URL(inst.connection.url.replace("ws://", "http://"));
     return parseInt(url.port) || 18789;

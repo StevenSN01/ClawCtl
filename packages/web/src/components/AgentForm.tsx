@@ -16,6 +16,7 @@ interface AgentFormProps {
   values: AgentFormValues;
   onChange: (values: AgentFormValues) => void;
   models: string[];
+  modelsByProvider: Record<string, string[]>;
   defaultModel: string;
   defaultThinking: string;
   isNew: boolean;
@@ -29,10 +30,19 @@ const EXEC_SECURITY_OPTIONS = [
   { value: "disabled", label: "Disabled" },
 ];
 
-export function AgentForm({ values, onChange, models, defaultModel, defaultThinking, isNew, onApplyTemplate }: AgentFormProps) {
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  deepseek: "DeepSeek",
+  google: "Google",
+  other: "Other",
+};
+
+export function AgentForm({ values, onChange, modelsByProvider, defaultModel, defaultThinking, isNew, onApplyTemplate }: AgentFormProps) {
   const [toolInput, setToolInput] = useState("");
   const [modelSearch, setModelSearch] = useState("");
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [providerFilter, setProviderFilter] = useState("");
 
   const set = <K extends keyof AgentFormValues>(key: K, val: AgentFormValues[K]) =>
     onChange({ ...values, [key]: val });
@@ -49,9 +59,16 @@ export function AgentForm({ values, onChange, models, defaultModel, defaultThink
     set("toolsAllow", values.toolsAllow.filter((t) => t !== tool));
   };
 
-  const filteredModels = models.filter((m) =>
-    m.toLowerCase().includes((modelSearch || values.model).toLowerCase())
-  );
+  const providerKeys = Object.keys(modelsByProvider);
+  const searchTerm = (modelSearch || values.model).toLowerCase();
+  const filteredGroups = Object.entries(modelsByProvider)
+    .filter(([provider]) => !providerFilter || provider === providerFilter)
+    .map(([provider, list]) => ({
+      provider,
+      label: PROVIDER_LABELS[provider] || provider,
+      models: list.filter((m) => m.toLowerCase().includes(searchTerm)),
+    }))
+    .filter((g) => g.models.length > 0);
 
   return (
     <div className="space-y-4">
@@ -70,33 +87,66 @@ export function AgentForm({ values, onChange, models, defaultModel, defaultThink
         )}
       </div>
 
-      {/* Model combobox */}
-      <div className="relative">
+      {/* Model: provider filter + combobox */}
+      <div>
         <label className="block text-xs text-ink-3 mb-1">
           Model
           {!values.model && defaultModel && <span className="ml-1 text-ink-3">(default: {defaultModel})</span>}
         </label>
-        <input
-          value={modelSearch || values.model}
-          onChange={(e) => { setModelSearch(e.target.value); set("model", e.target.value); setShowModelDropdown(true); }}
-          onFocus={() => setShowModelDropdown(true)}
-          onBlur={() => setTimeout(() => setShowModelDropdown(false), 200)}
-          placeholder={defaultModel || "Select model..."}
-          className="w-full px-3 py-2 text-sm bg-s2 border border-edge rounded text-ink placeholder:text-ink-3 focus:outline-none focus:border-cyan"
-        />
-        {showModelDropdown && filteredModels.length > 0 && (
-          <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-s1 border border-edge rounded shadow-card max-h-48 overflow-auto">
-            {filteredModels.map((m) => (
-              <button
-                key={m}
-                onMouseDown={() => { set("model", m); setModelSearch(""); setShowModelDropdown(false); }}
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-s2 text-ink"
-              >
-                {m}
-              </button>
+        <div className="flex gap-2">
+          <select
+            value={providerFilter}
+            onChange={(e) => setProviderFilter(e.target.value)}
+            className="w-28 shrink-0 px-2 py-2 text-sm bg-s2 border border-edge rounded text-ink focus:outline-none focus:border-cyan"
+          >
+            <option value="">All</option>
+            {providerKeys.map((k) => (
+              <option key={k} value={k}>{PROVIDER_LABELS[k] || k}</option>
             ))}
+          </select>
+          <div className="relative flex-1">
+            <input
+              value={modelSearch || values.model}
+              onChange={(e) => { setModelSearch(e.target.value); set("model", e.target.value); setShowModelDropdown(true); }}
+              onFocus={() => setShowModelDropdown(true)}
+              onBlur={() => setTimeout(() => setShowModelDropdown(false), 200)}
+              placeholder={defaultModel || "Select model..."}
+              className="w-full px-3 py-2 text-sm bg-s2 border border-edge rounded text-ink placeholder:text-ink-3 focus:outline-none focus:border-cyan"
+            />
+            {showModelDropdown && filteredGroups.length > 0 && (
+              <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-s1 border border-edge rounded shadow-card max-h-60 overflow-auto">
+                {providerFilter ? (
+                  /* Single provider selected — flat list, no headers */
+                  filteredGroups[0]?.models.map((m) => (
+                    <button
+                      key={m}
+                      onMouseDown={() => { set("model", m); setModelSearch(""); setShowModelDropdown(false); }}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-s2 text-ink"
+                    >
+                      {m}
+                    </button>
+                  ))
+                ) : (
+                  /* All providers — grouped with headers */
+                  filteredGroups.map((g) => (
+                    <div key={g.provider}>
+                      <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-ink-3 bg-s2/50 sticky top-0">{g.label}</div>
+                      {g.models.map((m) => (
+                        <button
+                          key={m}
+                          onMouseDown={() => { set("model", m); setModelSearch(""); setShowModelDropdown(false); }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-s2 text-ink"
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Thinking */}

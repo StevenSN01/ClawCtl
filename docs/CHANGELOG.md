@@ -1,5 +1,58 @@
 # ClawSafeMng Changelog
 
+## 2026-03-08 (Session 5) — UI 可读性 + 卸载 + 模型选择 + OAuth 改进
+
+### Features
+
+- **全局文字可读性修复**: 修改 CSS 设计 token `--color-ink-3` 从 `#4a5f8a` → `#6b82ad`，一处改动修复全站 200+ 处 `text-ink-3` 文字过暗问题。
+- **Upgrade/Install 图标区分**: 升级按钮使用 `ArrowUpCircle`（向上），安装使用 `Download`（向下），视觉语义更准确。
+- **实例卸载 (Uninstall)**: Instance Control tab 新增卸载按钮，通过 SSE 流式执行 `pkill` 停进程 → 禁用 systemd 服务 → `npm rm -g openclaw` → 验证删除。带确认对话框。
+- **模型列表两级选择**: Settings LLM 配置改为 Provider → Model 两级联动下拉。切换厂商自动切换对应模型列表，不再出现选 Anthropic 还显示 GPT 模型的问题。
+- **模型列表后端缓存**: 后端新增 `GET /settings/models` 端点，10 分钟 TTL 缓存，启动 5s 后首次刷新 + 定时刷新。从 OpenAI/Anthropic API 拉取实际可用模型，与静态预设合并（API 确认的模型排前面）。
+- **模型列表前端定时同步**: 前端每 10 分钟从 `/settings/models` 拉取最新模型数据，与本地预设合并后展示。页面不再只在首次加载时获取，后端刷新后前端自动跟进。
+- **Settings OAuth 远程适配**: OAuth 流程从直接弹窗改为先展示授权 URL，提供「Copy URL」和「Open in Browser」两个按钮。远程部署时用户可复制 URL 到本地浏览器打开，本地部署可直接弹窗，下方保留回调 URL 手动粘贴框。
+
+### Bug Fixes
+
+- **Settings 模型下拉与厂商不匹配**: 之前 `fetchModels` 基于已保存配置查询，切换厂商下拉不刷新模型列表。改为静态预设 + 后端缓存的 provider-keyed map。
+- **实例删除功能无意义**: 曾添加实例删除功能，但因实例通过 SSH 扫描自动发现，删除后下次扫描会重新出现。已移除该功能。
+
+### 经验教训
+
+1. **CSS token 是全局开关**: 当某个样式问题涉及大量引用时，优先检查是否可以通过修改 token 定义一处修复，而非逐个修改 200+ 处引用。
+2. **前后端缓存 TTL 对齐**: 后端 10 分钟缓存 + 前端 10 分钟轮询，保证数据最终一致。前端不能只加载一次就不刷新。
+3. **模型列表合并策略**: API 拉取的模型排在前面（已确认可用），静态预设作为补充和 fallback。去重用 Set。
+4. **OAuth 弹窗 vs URL 展示**: 远程部署场景下 `window.open()` 弹窗无法使用。应始终展示可操作的 URL（复制/点击），让用户自行选择打开方式。
+5. **实例 vs 主机的操作粒度**: 自动发现的实例不适合做「删除」操作（会被重新发现）。卸载/删除应在主机级别操作。
+
+---
+
+## 2026-03-08 (Session 4) — LLM 供应商检测 + Agent 配置增强
+
+### Features
+
+- **Model Combobox 分组选择**: Agent 配置中模型选择器改为「Provider 筛选 + 模型搜索」双栏设计。左侧下拉选厂商 (All/OpenAI/Anthropic/DeepSeek/Google)，右侧模型列表自动按所选厂商过滤。选"All"时按厂商分组并显示粘性 header。
+- **LLM 供应商自动检测**: LLM Providers 页新增已检测供应商展示。通过 SSH 扫描远程主机的 auth-profiles.json 和进程环境变量，自动发现已配置的 API key，以只读绿色 `auto` 标签展示，让用户知道哪些供应商可用。
+- **OpenAI OAuth 远程适配**: OAuth 授权流程从 `window.open()` 弹窗改为显示可见 URL，支持点击链接打开和一键复制，兼容远程部署场景 (浏览器和服务器不在同一台机器)。
+- **Gateway `models.list` RPC**: 新增 `fetchModelCatalog()` 方法，可获取 Gateway 运行时完整模型目录。
+
+### Bug Fixes
+
+- **`models.list` 误用导致假阳性**: 初版用 `models.list` RPC 检测已配置供应商，但该 RPC 返回所有内置模型 (含 amazon-bedrock、cerebras 等数十个)，即使没有配置任何 key 也会全部列出。改为扫描 auth-profiles.json + 进程环境变量。
+- **SSH 非交互式 shell 看不到环境变量**: `ssh2` 的 `conn.exec()` 不走 `.profile`/`.bashrc`，`printenv` 无法看到登录 shell 中设置的环境变量。改为读取 `/proc/<pid>/environ` (OpenClaw Gateway 进程)，并以 `bash -lc` 作为 fallback。
+- **供应商检测命令 exit code 非零**: Shell 命令中 `grep -q` 未匹配时返回 exit code 1，导致整个 stdout 被忽略 (代码检查 `exitCode === 0`)。修复：命令末尾追加 `\ntrue` 强制 exit 0，并移除 exitCode 检查。
+
+### 经验教训
+
+1. **OpenClaw API key 存储在 auth-profiles.json，不在 config 里**: API key 存储在 `~/.openclaw/agents/<agentId>/agent/auth-profiles.json` 的 `profiles` 字段下 (如 `openai-codex:default`)，**不在** `openclaw.json` 的 `models.providers` 中，也**不是**环境变量。
+2. **`models.list` RPC 是完整模型目录**: 返回所有已知厂商/模型的完整列表，**不能**用来判断哪些供应商已配置 key。
+3. **Auth profile key 格式**: `<provider>[-suffix]:<alias>`，如 `openai-codex:default`。提取 provider 名需：去掉 `:<alias>` → 去掉 `-codex`/`-responses` 等后缀 → 得到 `openai`。
+4. **SSH 进程环境变量检测**: 非交互式 SSH exec 看不到 `.profile` 中的变量。可靠方案是读 `/proc/<pid>/environ` (NUL 分隔)，`bash -lc` 作为 fallback。
+5. **Shell 命令 exit code 陷阱**: 复合 shell 命令的 exit code 是最后一条命令的 exit code。`grep -q` 未匹配返回 1 会导致整条命令"失败"。加 `; true` 或 `|| true` 确保不影响上游逻辑。
+6. **远程 OAuth 弹窗不可用**: 当 ClawCtl 部署在远端服务器时，`window.open()` 打开的弹窗无法与服务端回调通信。应显示 URL 供用户手动打开和复制。
+
+---
+
 ## 2026-03-07 (Session 3) — 生命周期管理 + 监控 + Bug 修复
 
 ### Features

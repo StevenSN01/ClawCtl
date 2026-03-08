@@ -101,7 +101,7 @@ export class InstanceManager extends EventEmitter {
   private scheduleReconnect(id: string) {
     if (this.reconnectTimers.has(id)) return;
     const attempts = this.reconnectAttempts.get(id) || 0;
-    if (attempts >= 10) return; // wait for next auto-refresh cycle
+    if (attempts >= 10) return; // will be retried by periodic health check
     const delay = Math.min(5_000 * Math.pow(2, attempts), 60_000);
     this.reconnectAttempts.set(id, attempts + 1);
     const timer = setTimeout(() => {
@@ -152,6 +152,20 @@ export class InstanceManager extends EventEmitter {
     await Promise.allSettled(
       [...this.clients.keys()].map((id) => this.refreshInstance(id))
     );
+    // Also retry disconnected instances that exhausted their reconnect attempts
+    this.retryDisconnected();
+  }
+
+  /** Retry all disconnected/errored instances that have no pending reconnect timer */
+  private retryDisconnected() {
+    for (const [id, client] of this.clients) {
+      const status = client.conn.status;
+      if ((status === "disconnected" || status === "error") && !this.reconnectTimers.has(id)) {
+        console.log(`[manager] health check: retrying ${client.conn.label || id}`);
+        this.reconnectAttempts.set(id, 0); // reset counter
+        this.reconnect(id);
+      }
+    }
   }
 
   startAutoRefresh(intervalMs = 30_000) {

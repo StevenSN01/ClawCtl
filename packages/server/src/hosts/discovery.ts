@@ -72,6 +72,7 @@ export async function discoverRemoteInstances(
         label: `${host.label}/${profileName}`,
         status: "disconnected",
         binaryVersion,
+        remotePort: port,
       });
     } catch (e: any) { console.log(`[discovery] parse error for block: ${e.message}`); }
   }
@@ -85,10 +86,10 @@ export function sshExec(host: RemoteHost, credential: SshCredential, command: st
     const conn = new Client();
     console.log(`[ssh] connecting to ${host.username}@${host.host}:${host.port}`);
     const timeout = setTimeout(() => {
-      console.log(`[ssh] TIMEOUT after 15s for ${host.host}`);
+      console.log(`[ssh] TIMEOUT after 35s for ${host.host}`);
       conn.end();
       reject(new Error(`SSH timeout connecting to ${host.host}`));
-    }, 15_000);
+    }, 35_000);
 
     conn.on("ready", () => {
       console.log(`[ssh] connected to ${host.host}, executing command`);
@@ -120,7 +121,7 @@ export function sshExec(host: RemoteHost, credential: SshCredential, command: st
       username: host.username,
       password: credential.password,
       privateKey: credential.privateKey,
-      readyTimeout: 10_000,
+      readyTimeout: 30_000,
     });
   });
 }

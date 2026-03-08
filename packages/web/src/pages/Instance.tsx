@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, RefreshCw, ArrowUpDown, Play, Square, RotateCcw, Download, Save, Terminal, Camera, GitCompare, Trash2, Users, Plus } from "lucide-react";
+import { ChevronLeft, RefreshCw, ArrowUpDown, Play, Square, RotateCcw, Download, ArrowUpCircle, Save, Terminal, Camera, GitCompare, Trash2, Users, Plus } from "lucide-react";
 import { useInstances, type InstanceInfo } from "../hooks/useInstances";
 import { get, post, put } from "../lib/api";
 import { del } from "../lib/api";
 import { AgentForm, type AgentFormValues } from "../components/AgentForm";
 import { TemplateApplyModal } from "../components/TemplateApplyModal";
 import { RestartDialog } from "../components/RestartDialog";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 function timeAgo(ts?: number): string {
   if (!ts) return "";
@@ -22,7 +23,7 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
 }
 
-type Tab = "overview" | "sessions" | "config" | "security" | "agents" | "control";
+type Tab = "overview" | "sessions" | "config" | "security" | "agents" | "llm" | "control";
 
 function OverviewTab({ inst }: { inst: InstanceInfo }) {
   const totalTokens = inst.sessions.reduce((t, s) => t + (s.totalTokens || 0), 0);
@@ -392,6 +393,7 @@ function SecurityTab({ inst }: { inst: InstanceInfo }) {
 
 function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentId?: string }) {
   const [models, setModels] = useState<string[]>([]);
+  const [modelsByProvider, setModelsByProvider] = useState<Record<string, string[]>>({});
   const [defaultModel, setDefaultModel] = useState("");
   const [defaultThinking, setDefaultThinking] = useState("");
   const [agents, setAgents] = useState<AgentFormValues[]>([]);
@@ -409,9 +411,10 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
     try {
       const [cfg, modelData] = await Promise.all([
         get<any>(`/lifecycle/${inst.id}/config-file`),
-        get<{ models: string[]; defaultModel: string }>(`/lifecycle/${inst.id}/models`),
+        get<{ models: string[]; modelsByProvider: Record<string, string[]>; defaultModel: string }>(`/lifecycle/${inst.id}/models`),
       ]);
       setModels(modelData.models);
+      setModelsByProvider(modelData.modelsByProvider || {});
 
       const agentsSection = cfg?.agents || {};
       const defaults = agentsSection.defaults || {};
@@ -443,7 +446,8 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
   const selected = agents.find((a) => a.id === selectedId) || null;
 
   const updateAgent = (values: AgentFormValues) => {
-    setAgents((prev) => prev.map((a) => a.id === values.id ? values : a));
+    setAgents((prev) => prev.map((a) => a.id === selectedId ? values : a));
+    if (values.id !== selectedId) setSelectedId(values.id);
   };
 
   const addNewAgent = () => {
@@ -582,6 +586,7 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
                 values={selected}
                 onChange={updateAgent}
                 models={models}
+                modelsByProvider={modelsByProvider}
                 defaultModel={defaultModel}
                 defaultThinking={defaultThinking}
                 isNew={isNew}
@@ -652,6 +657,508 @@ function AgentsTab({ inst, initialAgentId }: { inst: InstanceInfo; initialAgentI
         open={showRestartDialog}
         onClose={() => setShowRestartDialog(false)}
       />
+    </div>
+  );
+}
+
+const PROVIDER_PRESETS: Record<string, { label: string; baseUrl: string; api: string; keyPlaceholder: string }> = {
+  openai: { label: "OpenAI", baseUrl: "https://api.openai.com/v1", api: "openai-responses", keyPlaceholder: "sk-..." },
+  anthropic: { label: "Anthropic", baseUrl: "https://api.anthropic.com", api: "anthropic-messages", keyPlaceholder: "sk-ant-..." },
+  deepseek: { label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", api: "openai-completions", keyPlaceholder: "sk-..." },
+  google: { label: "Google AI", baseUrl: "https://generativelanguage.googleapis.com/v1beta", api: "google-generative-ai", keyPlaceholder: "AIza..." },
+  azure: { label: "Azure OpenAI", baseUrl: "https://{resource}.openai.azure.com/openai", api: "openai-completions", keyPlaceholder: "API key" },
+  ollama: { label: "Ollama (local)", baseUrl: "http://localhost:11434", api: "ollama", keyPlaceholder: "" },
+  custom: { label: "Custom / Other", baseUrl: "", api: "", keyPlaceholder: "API key" },
+};
+const AUTH_MODES = ["api-key", "oauth", "aws-sdk", "token"] as const;
+const API_TYPES = ["openai-completions", "openai-responses", "openai-codex-responses", "anthropic-messages", "ollama", "google-generative-ai", "bedrock-converse-stream"] as const;
+
+interface ProviderEntry {
+  preset: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  auth: string;
+  api: string;
+  models: any[];
+}
+
+function detectPreset(name: string, baseUrl: string): string {
+  for (const [key, p] of Object.entries(PROVIDER_PRESETS)) {
+    if (key === "custom") continue;
+    if (name === key) return key;
+    try { if (baseUrl && p.baseUrl && baseUrl.includes(new URL(p.baseUrl).hostname)) return key; } catch { /* ignore */ }
+  }
+  return "custom";
+}
+
+function LlmTab({ inst }: { inst: InstanceInfo }) {
+  const [providers, setProviders] = useState<Record<string, any>>({});
+  const [detectedProviders, setDetectedProviders] = useState<{ name: string; source: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ProviderEntry | null>(null);
+  const [editOrigName, setEditOrigName] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  // OpenAI OAuth state
+  const [openaiAuthMode, setOpenaiAuthMode] = useState<"apikey" | "oauth">("apikey");
+  const [oauthStatus, setOauthStatus] = useState<"idle" | "starting" | "waiting" | "authenticating" | "complete" | "error">("idle");
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthManualUrl, setOauthManualUrl] = useState("");
+  const [oauthAuthUrl, setOauthAuthUrl] = useState<string | null>(null);
+  const [hasOAuthToken, setHasOAuthToken] = useState(false);
+  const [oauthExpiry, setOauthExpiry] = useState<number | null>(null);
+
+  const fetchProviders = async () => {
+    setLoading(true);
+    try {
+      const r = await get<{ providers: Record<string, any>; detectedProviders?: { name: string; source: string }[] }>(`/lifecycle/${inst.id}/providers`);
+      setProviders(r.providers || {});
+      setDetectedProviders(r.detectedProviders || []);
+    } catch (err: any) {
+      setMessage(`Error: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchProviders(); }, [inst.id]);
+
+  const saveProviders = async (next: Record<string, any>) => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await put(`/lifecycle/${inst.id}/providers`, { providers: next });
+      setProviders(next);
+      setMessage("Saved");
+      setTimeout(() => setMessage(null), 2000);
+    } catch (err: any) {
+      setMessage(`Error: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startAdd = () => {
+    setEditOrigName(null);
+    setShowAdvanced(false);
+    setOpenaiAuthMode("apikey");
+    setOauthStatus("idle");
+    setOauthError(null);
+    setOauthManualUrl("");
+    setOauthAuthUrl(null);
+    setHasOAuthToken(false);
+    setOauthExpiry(null);
+    const p = PROVIDER_PRESETS.openai;
+    setEditing({ preset: "openai", name: "openai", baseUrl: p.baseUrl, apiKey: "", auth: "api-key", api: p.api, models: [] });
+  };
+
+  const applyPreset = (preset: string) => {
+    if (!editing) return;
+    const p = PROVIDER_PRESETS[preset];
+    setEditing({
+      ...editing,
+      preset,
+      name: preset === "custom" ? editing.name : preset,
+      baseUrl: p.baseUrl,
+      api: p.api,
+      auth: "api-key",
+    });
+  };
+
+  const startEdit = (name: string) => {
+    const p = providers[name];
+    const preset = detectPreset(name, p.baseUrl || "");
+    setEditOrigName(name);
+    setShowAdvanced(p.auth ? (p.auth !== "api-key" && p.auth !== "oauth") : false);
+    const isOAuth = p.auth === "oauth" || !!p._oauthRefreshToken;
+    setOpenaiAuthMode(preset === "openai" && isOAuth ? "oauth" : "apikey");
+    setHasOAuthToken(isOAuth && !!p.apiKey);
+    setOauthExpiry(p._oauthExpiresAt || null);
+    setOauthStatus("idle");
+    setOauthError(null);
+    setOauthManualUrl("");
+    setOauthAuthUrl(null);
+    setEditing({
+      preset,
+      name,
+      baseUrl: p.baseUrl || "",
+      apiKey: typeof p.apiKey === "string" ? p.apiKey : "",
+      auth: p.auth || "api-key",
+      api: p.api || "",
+      models: p.models || [],
+    });
+  };
+
+  const saveEntry = async () => {
+    if (!editing || !editing.name.trim()) return;
+    const next = { ...providers };
+    if (editOrigName && editOrigName !== editing.name) {
+      delete next[editOrigName];
+    }
+    const entry: any = { baseUrl: editing.baseUrl };
+    if (editing.apiKey) entry.apiKey = editing.apiKey;
+    if (editing.auth && editing.auth !== "api-key") entry.auth = editing.auth;
+    if (editing.api) entry.api = editing.api;
+    if (editing.models.length > 0) entry.models = editing.models;
+    next[editing.name] = entry;
+    await saveProviders(next);
+    setEditing(null);
+    setEditOrigName(null);
+  };
+
+  const deleteProvider = async (name: string) => {
+    const next = { ...providers };
+    delete next[name];
+    await saveProviders(next);
+  };
+
+  if (loading) return <div className="text-ink-3 py-8 text-center">Loading providers...</div>;
+
+  const providerNames = Object.keys(providers);
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-s1 border border-edge rounded-card shadow-card">
+        <div className="flex items-center justify-between p-4 border-b border-edge">
+          <h3 className="text-lg font-semibold text-ink">LLM Providers</h3>
+          <button onClick={startAdd} className="flex items-center gap-1 px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-sm">
+            <Plus size={14} /> Add Provider
+          </button>
+        </div>
+
+        {providerNames.length === 0 && detectedProviders.length === 0 && !editing && (
+          <div className="p-8 text-center text-ink-3 text-sm">
+            No LLM providers configured on this instance.
+          </div>
+        )}
+
+        {(providerNames.length > 0 || detectedProviders.length > 0) && (
+          <div className="divide-y divide-edge">
+            {providerNames.map((name) => {
+              const p = providers[name];
+              const preset = PROVIDER_PRESETS[name];
+              const displayName = preset ? preset.label : name;
+              const maskedKey = p.auth === "oauth"
+                ? (p._oauthExpiresAt && p._oauthExpiresAt < Date.now() ? "OAuth (expired)" : "OAuth")
+                : typeof p.apiKey === "string" && p.apiKey
+                  ? p.apiKey.slice(0, 6) + "..." + p.apiKey.slice(-4)
+                  : typeof p.apiKey === "object" ? `(${p.apiKey?.source || "secret"})` : "—";
+              return (
+                <div key={name} className="p-4 flex items-center gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-ink">{displayName}</span>
+                      {!preset && <span className="font-mono text-xs text-ink-3">({name})</span>}
+                      {p.auth && p.auth !== "api-key" && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-dim text-cyan">{p.auth}</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-ink-3 mt-1 flex gap-4">
+                      <span className="truncate">{p.baseUrl || "—"}</span>
+                      <span>Key: {maskedKey}</span>
+                      <span>{(p.models || []).length} model{(p.models || []).length !== 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => startEdit(name)} className="text-xs text-cyan hover:text-cyan/80 px-2 py-1">Edit</button>
+                  <button onClick={() => deleteProvider(name)} className="text-xs text-danger hover:text-danger/80 px-2 py-1">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
+            {detectedProviders.map((dp) => {
+              const preset = PROVIDER_PRESETS[dp.name];
+              const displayName = preset ? preset.label : dp.name;
+              return (
+                <div key={`det-${dp.name}`} className="p-4 flex items-center gap-4 opacity-70">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-ink">{displayName}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-ok/20 text-ok">auto</span>
+                    </div>
+                    <div className="text-xs text-ink-3 mt-1">
+                      <code className="bg-s2 px-1 rounded">{dp.source}</code> — managed on server
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {message && (
+          <div className={`px-4 py-2 text-sm ${message.startsWith("Error") ? "text-danger" : "text-ok"}`}>{message}</div>
+        )}
+      </div>
+
+      {/* Edit/Add form */}
+      {editing && (
+        <div className="bg-s1 border border-edge rounded-card shadow-card p-5">
+          <h3 className="text-lg font-semibold text-ink mb-4">
+            {editOrigName ? `Edit: ${PROVIDER_PRESETS[editOrigName]?.label || editOrigName}` : "Add Provider"}
+          </h3>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm text-ink-2 mb-1">Provider</label>
+              <select
+                value={editing.preset}
+                onChange={(e) => applyPreset(e.target.value)}
+                disabled={!!editOrigName}
+                className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink disabled:opacity-50"
+              >
+                {Object.entries(PROVIDER_PRESETS).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {editing.preset === "custom" && (
+              <div>
+                <label className="block text-sm text-ink-2 mb-1">Config Key</label>
+                <input
+                  value={editing.name}
+                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                  placeholder="my-provider"
+                  className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand"
+                />
+                <p className="text-[10px] text-ink-3 mt-1">Identifier used in openclaw.json models.providers</p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm text-ink-2 mb-1">Base URL</label>
+              <input
+                value={editing.baseUrl}
+                onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })}
+                placeholder={PROVIDER_PRESETS[editing.preset]?.baseUrl || "https://..."}
+                className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand"
+              />
+            </div>
+
+            {editing.preset === "openai" && (
+              <div>
+                <label className="block text-sm text-ink-2 mb-1">Authentication</label>
+                <select
+                  value={openaiAuthMode}
+                  onChange={(e) => setOpenaiAuthMode(e.target.value as "apikey" | "oauth")}
+                  className="w-full bg-s2 border border-edge rounded-lg px-3 py-2.5 text-sm text-ink"
+                >
+                  <option value="apikey">API Key</option>
+                  <option value="oauth">OAuth (ChatGPT Plus/Pro)</option>
+                </select>
+              </div>
+            )}
+
+            {editing.preset !== "ollama" && (editing.preset !== "openai" || openaiAuthMode === "apikey") && (
+              <div>
+                <label className="block text-sm text-ink-2 mb-1">API Key</label>
+                <input
+                  value={editing.apiKey}
+                  onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })}
+                  type="password"
+                  placeholder={PROVIDER_PRESETS[editing.preset]?.keyPlaceholder || "API key"}
+                  className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-brand"
+                />
+              </div>
+            )}
+
+            {editing.preset === "openai" && openaiAuthMode === "oauth" && (
+              <div className="p-3 bg-s2/50 border border-edge rounded-lg space-y-3">
+                {hasOAuthToken && (
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-block w-2 h-2 rounded-full ${oauthExpiry && oauthExpiry < Date.now() ? "bg-warn" : "bg-ok"}`} />
+                    <span className="text-sm text-ink-2">
+                      {oauthExpiry && oauthExpiry < Date.now() ? "Token expired" : "OAuth connected"}
+                    </span>
+                    {oauthExpiry && (
+                      <span className="text-[10px] text-ink-3 ml-auto">
+                        {oauthExpiry < Date.now() ? "Expired" : "Expires"}: {new Date(oauthExpiry).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {(oauthStatus === "idle" || oauthStatus === "error") && (
+                  <button
+                    onClick={async () => {
+                      setOauthStatus("starting");
+                      setOauthError(null);
+                      setOauthAuthUrl(null);
+                      try {
+                        const r = await post<{ authUrl: string }>("/settings/oauth/openai/start", {});
+                        setOauthAuthUrl(r.authUrl);
+                        setOauthStatus("waiting");
+                        // Poll for completion
+                        const poll = setInterval(async () => {
+                          try {
+                            const s = await get<{ status: string; credentials?: any; error?: string }>("/settings/oauth/openai/status");
+                            if (s.status === "complete") {
+                              clearInterval(poll);
+                              setOauthStatus("authenticating");
+                              const saveR = await post<{ ok: boolean; expiresAt?: number }>(`/lifecycle/${inst.id}/providers/oauth/save`, {});
+                              if (saveR.ok) {
+                                setOauthStatus("complete");
+                                setHasOAuthToken(true);
+                                setOauthExpiry(saveR.expiresAt || null);
+                                setOauthAuthUrl(null);
+                                setMessage("OpenAI OAuth configured");
+                                await fetchProviders();
+                              }
+                            } else if (s.status === "error") {
+                              clearInterval(poll);
+                              setOauthStatus("error");
+                              setOauthError(s.error || "OAuth failed");
+                            }
+                          } catch { /* ignore poll errors */ }
+                        }, 2000);
+                        setTimeout(() => clearInterval(poll), 150_000);
+                      } catch (e: any) {
+                        setOauthStatus("error");
+                        setOauthError(e.message);
+                      }
+                    }}
+                    className="w-full px-4 py-2.5 bg-brand hover:bg-brand-light rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {hasOAuthToken ? "Re-authenticate with OpenAI" : "Login with OpenAI"}
+                  </button>
+                )}
+
+                {oauthStatus === "starting" && (
+                  <p className="text-sm text-ink-2 animate-pulse">Starting OAuth flow...</p>
+                )}
+
+                {oauthStatus === "waiting" && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-ink-2">Open the link below to sign in with OpenAI:</p>
+                    {oauthAuthUrl && (
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <a
+                            href={oauthAuthUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 px-4 py-2 bg-brand hover:bg-brand-light rounded-lg text-sm text-center font-medium transition-colors"
+                          >
+                            Open OpenAI Login
+                          </a>
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(oauthAuthUrl); setMessage("URL copied"); }}
+                            className="px-3 py-2 bg-s2 border border-edge rounded-lg text-xs hover:bg-s3 transition-colors"
+                          >
+                            Copy URL
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-ink-3">Waiting for callback... After sign-in you'll be redirected automatically.</p>
+                      </div>
+                    )}
+                    <div className="border-t border-edge pt-2">
+                      <p className="text-xs text-ink-3 mb-1">If callback didn't reach ClawCtl, paste the redirect URL manually:</p>
+                      <div className="flex gap-2">
+                        <input
+                          value={oauthManualUrl}
+                          onChange={(e) => setOauthManualUrl(e.target.value)}
+                          placeholder="http://localhost:1455/auth/callback?code=..."
+                          className="flex-1 bg-s2 border border-edge rounded-lg px-3 py-1.5 text-xs text-ink placeholder:text-ink-3 focus:border-brand font-mono"
+                        />
+                        <button
+                          onClick={async () => {
+                            if (!oauthManualUrl.trim()) return;
+                            try {
+                              await post("/settings/oauth/openai/callback", { redirectUrl: oauthManualUrl });
+                              setOauthManualUrl("");
+                            } catch (e: any) {
+                              setOauthError(e.message);
+                            }
+                          }}
+                          disabled={!oauthManualUrl.trim()}
+                          className="px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs disabled:opacity-50"
+                        >
+                          Submit
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {oauthStatus === "authenticating" && (
+                  <p className="text-sm text-ink-2 animate-pulse">Saving tokens to instance...</p>
+                )}
+
+                {oauthStatus === "complete" && (
+                  <p className="text-sm text-ok">OpenAI OAuth configured successfully</p>
+                )}
+
+                {oauthError && <p className="text-sm text-danger">{oauthError}</p>}
+
+                <p className="text-[10px] text-ink-3">
+                  Uses OpenAI Codex OAuth for ChatGPT Plus/Pro subscriptions. Tokens saved to instance config.
+                </p>
+              </div>
+            )}
+
+            {/* Advanced options — auto-configured from preset, only show for override */}
+            {editing.preset !== "custom" && !showAdvanced ? (
+              <div className="flex items-center gap-3 text-xs text-ink-3">
+                <span>API: <code className="text-ink-2">{editing.api || "auto"}</code></span>
+                <span>Auth: <code className="text-ink-2">{editing.auth}</code></span>
+                <button onClick={() => setShowAdvanced(true)} className="text-ink-3 hover:text-ink underline underline-offset-2">
+                  Override
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 p-3 bg-s2/50 border border-edge rounded-lg">
+                <div>
+                  <label className="block text-xs text-ink-2 mb-1">Auth Mode</label>
+                  <select
+                    value={editing.auth}
+                    onChange={(e) => setEditing({ ...editing, auth: e.target.value })}
+                    className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink"
+                  >
+                    {AUTH_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-2 mb-1">API Type</label>
+                  <select
+                    value={editing.api}
+                    onChange={(e) => setEditing({ ...editing, api: e.target.value })}
+                    className="w-full bg-s2 border border-edge rounded-lg px-3 py-2 text-sm text-ink"
+                  >
+                    <option value="">Auto-detect</option>
+                    {API_TYPES.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {editing.models.length > 0 && (
+              <div>
+                <label className="block text-sm text-ink-2 mb-1">Models ({editing.models.length})</label>
+                <div className="flex flex-wrap gap-1">
+                  {editing.models.map((m: any, i: number) => (
+                    <span key={i} className="px-2 py-0.5 rounded bg-s2 text-xs text-ink-2 font-mono">{m.id || m.name || `model-${i}`}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={saveEntry}
+                disabled={saving || !editing.name.trim() || !editing.baseUrl.trim()}
+                className="px-4 py-2 bg-brand hover:bg-brand-light rounded-lg text-sm disabled:opacity-50"
+              >
+                {saving ? "Saving..." : editOrigName ? "Update" : "Add"}
+              </button>
+              <button onClick={() => { setEditing(null); setEditOrigName(null); }} className="px-4 py-2 text-sm text-ink-3 hover:text-ink">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -736,6 +1243,7 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
 
   const [installVersion, setInstallVersion] = useState("");
   const [installSteps, setInstallSteps] = useState<Array<{ step: string; status: string; detail?: string }>>([]);
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
 
   const doInstall = async () => {
     const hostId = inst.id.match(/^ssh-(\d+)-/)?.[1] || "local";
@@ -747,6 +1255,43 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ version: installVersion || undefined }),
+      });
+      const reader = res.body?.getReader();
+      if (reader) {
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const msg = JSON.parse(line.slice(6));
+              if (msg.done !== undefined) break;
+              setInstallSteps((prev) => {
+                const idx = prev.findIndex((s) => s.step === msg.step);
+                if (idx >= 0) { const next = [...prev]; next[idx] = msg; return next; }
+                return [...prev, msg];
+              });
+            } catch { /* ignore */ }
+          }
+        }
+      }
+      await fetchVersions();
+    } finally { setBusy(""); }
+  };
+
+  const doUninstall = async () => {
+    const hostId = inst.id.match(/^ssh-(\d+)-/)?.[1] || "local";
+    setBusy("uninstall");
+    setInstallSteps([]);
+    try {
+      const res = await fetch(`/api/lifecycle/host/${hostId}/uninstall`, {
+        method: "POST",
+        credentials: "include",
       });
       const reader = res.body?.getReader();
       if (reader) {
@@ -930,8 +1475,17 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
                 disabled={!!busy || (versions?.openclaw?.installed === installVersion)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-brand/20 text-brand hover:bg-brand/30 disabled:opacity-40"
               >
-                <Download size={14} /> {versions?.openclaw?.installed ? "Upgrade" : "Install"}
+                {(versions?.openclaw?.installed || inst.version) ? <><ArrowUpCircle size={14} /> Upgrade</> : <><Download size={14} /> Install</>}
               </button>
+              {(versions?.openclaw?.installed || inst.version) && (
+                <button
+                  onClick={() => setConfirmUninstall(true)}
+                  disabled={!!busy}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-danger/20 text-danger hover:bg-danger/30 disabled:opacity-40"
+                >
+                  <Trash2 size={14} /> Uninstall
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1095,6 +1649,19 @@ function ControlTab({ inst }: { inst: InstanceInfo }) {
           </div>
         )}
       </div>
+
+      {confirmUninstall && (
+        <ConfirmDialog
+          title="Uninstall OpenClaw"
+          message={`This will stop all running processes, disable systemd services, and remove the openclaw npm package from the host. Configuration files will be preserved.`}
+          confirmLabel="Uninstall"
+          onConfirm={async () => {
+            setConfirmUninstall(false);
+            await doUninstall();
+          }}
+          onCancel={() => setConfirmUninstall(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1137,6 +1704,7 @@ export function Instance() {
     { key: "config", label: "Config" },
     { key: "security", label: "Security" },
     { key: "agents", label: `Agents (${inst.agents.length})` },
+    { key: "llm", label: "LLM" },
     { key: "control", label: "Control" },
   ];
 
@@ -1160,7 +1728,7 @@ export function Instance() {
             <button
               key={t.key}
               onClick={() => setActiveTab(t.key)}
-              className={`px-3 py-1.5 text-sm ${activeTab === t.key ? "border-b-2 border-brand text-brand" : "text-ink-3 hover:text-ink-2"}`}
+              className={`px-3 py-1.5 text-sm ${activeTab === t.key ? "border-b-2 border-brand text-brand" : "text-ink-3 hover:text-ink"}`}
             >
               {t.label}
             </button>
@@ -1173,6 +1741,7 @@ export function Instance() {
           {activeTab === "config" && <ConfigTab inst={inst} />}
           {activeTab === "security" && <SecurityTab inst={inst} />}
           {activeTab === "agents" && <AgentsTab inst={inst} initialAgentId={searchParams.get("agent") || undefined} />}
+          {activeTab === "llm" && <LlmTab inst={inst} />}
           {activeTab === "control" && <ControlTab inst={inst} />}
         </div>
       </div>

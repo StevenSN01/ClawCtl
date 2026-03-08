@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, Plus, X, Download } from "lucide-react";
+import { RefreshCw, Plus, X, Download, Play } from "lucide-react";
 import { ReactFlow, type Node, type Edge, Background, Controls } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useInstances, type InstanceInfo } from "../hooks/useInstances";
 import { useAuth } from "../hooks/useAuth";
 import { get, post } from "../lib/api";
+
 
 interface RemoteHost {
   id: number;
@@ -32,8 +33,41 @@ function StatusDot({ status }: { status: string }) {
 
 function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () => void }) {
   const navigate = useNavigate();
+  const [starting, setStarting] = useState(false);
   const totalTokens = inst.sessions.reduce((t, s) => t + (s.totalTokens || 0), 0);
   const criticalCount = inst.securityAudit?.filter((a) => a.level === "critical").length || 0;
+  const isDown = inst.connection.status === "error" || inst.connection.status === "disconnected";
+
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const handleStart = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setStarting(true);
+    setStartError(null);
+    try {
+      await post(`/lifecycle/${inst.id}/start`);
+      // Poll status until gateway is running or timeout
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          const st = await get<{ running: boolean }>(`/lifecycle/${inst.id}/status`);
+          if (st.running) {
+            onRefresh();
+            setStarting(false);
+            return;
+          }
+        } catch { /* keep polling */ }
+      }
+      // Timeout — refresh anyway
+      onRefresh();
+      setStartError("Gateway may still be starting. Try refreshing.");
+    } catch (err: any) {
+      setStartError(err.message || "Start failed");
+    } finally {
+      setStarting(false);
+    }
+  };
 
   return (
     <div
@@ -46,13 +80,27 @@ function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () =
           <h3 className="font-semibold text-ink">{inst.connection.label || inst.id}</h3>
           {inst.version && <span className="font-mono text-xs text-ink-3">v{inst.version}</span>}
         </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onRefresh(); }}
-          className="text-ink-3 hover:text-ink transition-colors"
-        >
-          <RefreshCw size={14} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+            className="text-ink-3 hover:text-ink transition-colors"
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
       </div>
+      {isDown && (
+        <div className="mb-2">
+          <button
+            onClick={handleStart}
+            disabled={starting}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-ok/10 hover:bg-ok/20 text-ok rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+          >
+            <Play size={14} /> {starting ? "Starting..." : "Start Gateway"}
+          </button>
+          {startError && <p className="text-xs text-danger mt-1">{startError}</p>}
+        </div>
+      )}
       <div className="space-y-1.5 text-sm text-ink-2">
         <div className="flex gap-2 flex-wrap">
           {inst.channels.map((ch) => (
@@ -350,39 +398,47 @@ interface InstallStep {
   detail?: string;
 }
 
+/** @returns "completed" if server sent done event, "disconnected" if stream broke mid-install */
 async function streamInstallSSE(
   hostId: number | string,
   version: string | undefined,
   onStep: (step: InstallStep) => void,
   onDone: (success: boolean) => void,
-) {
+): Promise<"completed" | "disconnected"> {
   const body = JSON.stringify({ version });
-  const res = await fetch(`/api/lifecycle/host/${hostId}/install`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body,
-  });
-  const reader = res.body?.getReader();
-  if (!reader) { onDone(false); return; }
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      try {
-        const msg = JSON.parse(line.slice(6));
-        if (msg.done !== undefined) { onDone(msg.success); return; }
-        onStep(msg as InstallStep);
-      } catch { /* ignore */ }
+  let receivedSteps = false;
+  try {
+    const res = await fetch(`/api/lifecycle/host/${hostId}/install`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body,
+    });
+    const reader = res.body?.getReader();
+    if (!reader) { onDone(false); return "completed"; }
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const msg = JSON.parse(line.slice(6));
+          if (msg.done !== undefined) { onDone(msg.success); return "completed"; }
+          receivedSteps = true;
+          onStep(msg as InstallStep);
+        } catch { /* ignore */ }
+      }
     }
-  }
+  } catch { /* fetch/network error */ }
+  // Stream ended without a done event
+  if (receivedSteps) return "disconnected";
   onDone(false);
+  return "completed";
 }
 
 const STEP_ICON: Record<string, string> = {
@@ -398,19 +454,37 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
   const [result, setResult] = useState<"success" | "error" | null>(null);
   const [versionOptions, setVersionOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [selectedVersion, setSelectedVersion] = useState("");
+  // "checking" → loading, "not_installed" → show install, "installed" → show init gateway
+  const [hostStatus, setHostStatus] = useState<"checking" | "not_installed" | "installed">("checking");
+  const [installedVersion, setInstalledVersion] = useState<string>("");
+  // Init gateway form
+  const [gwPort, setGwPort] = useState("18789");
+  const [gwToken, setGwToken] = useState("");
+  const [gwProfile, setGwProfile] = useState("");
+  const [initMsg, setInitMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    // Check if openclaw is already installed on this host
+    get<{ status: string; version?: string }>(`/lifecycle/host/${host.id}/install-status`)
+      .then((st) => {
+        if (st.status === "installed" && st.version) {
+          setHostStatus("installed");
+          setInstalledVersion(st.version);
+        } else {
+          setHostStatus("not_installed");
+        }
+      })
+      .catch(() => setHostStatus("not_installed"));
+
     get<{ distTags: Record<string, string>; versions: string[] }>("/lifecycle/available-versions")
       .then(({ distTags, versions }) => {
         const opts: Array<{ label: string; value: string }> = [];
-        // Add dist-tags first, latest on top
         if (distTags) {
           const sorted = Object.entries(distTags).sort(([a], [b]) => a === "latest" ? -1 : b === "latest" ? 1 : a.localeCompare(b));
           for (const [tag, ver] of sorted) {
             opts.push({ label: tag === "latest" ? `${ver} (stable)` : `${ver} (${tag})`, value: ver });
           }
         }
-        // Add recent stable versions not already in dist-tags
         const tagVersions = new Set(Object.values(distTags || {}));
         for (const ver of (versions || [])) {
           if (!tagVersions.has(ver)) {
@@ -424,9 +498,40 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
       .catch(() => {});
   }, []);
 
+  const pollInstallStatus = async () => {
+    setSteps((prev) => [...prev, { step: "Connection lost, checking remote status...", status: "running" }]);
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const st = await get<{ status: string; version?: string }>(`/lifecycle/host/${host.id}/install-status`);
+        if (st.status === "installed") {
+          setSteps((prev) => {
+            const next = prev.filter((s) => s.step !== "Connection lost, checking remote status...");
+            return [...next, { step: "Install completed on remote", status: "done", detail: st.version ? `v${st.version}` : undefined }];
+          });
+          setHostStatus("installed");
+          setInstalledVersion(st.version || "");
+          setResult(null); setBusy(false);
+          return;
+        }
+        if (st.status === "not_installed") {
+          setSteps((prev) => prev.map((s) =>
+            s.step === "Connection lost, checking remote status..." ? { ...s, status: "error" as const, detail: "Install process ended without success" } : s
+          ));
+          setResult("error"); setBusy(false);
+          return;
+        }
+      } catch { /* keep trying */ }
+    }
+    setSteps((prev) => prev.map((s) =>
+      s.step === "Connection lost, checking remote status..." ? { ...s, status: "error" as const, detail: "Timed out, please check manually" } : s
+    ));
+    setResult("error"); setBusy(false);
+  };
+
   const install = async () => {
     setBusy(true); setSteps([]); setResult(null);
-    await streamInstallSSE(
+    const outcome = await streamInstallSSE(
       host.id,
       selectedVersion || undefined,
       (step) => setSteps((prev) => {
@@ -435,35 +540,100 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
         return [...prev, step];
       }),
       async (success) => {
-        setResult(success ? "success" : "error");
-        setBusy(false);
         if (success) {
           setSteps((prev) => [...prev, { step: "Scanning instances...", status: "running" }]);
+          // After install, check if gateway is already running (might auto-start)
           try {
-            await post(`/hosts/${host.id}/scan`, {});
+            const scan = await post<{ discovered: number }>(`/hosts/${host.id}/scan`, {});
             setSteps((prev) => {
               const next = [...prev];
               const idx = next.findIndex((s) => s.step === "Scanning instances...");
               if (idx >= 0) next[idx] = { step: "Scanning instances...", status: "done" };
               return next;
             });
+            if (scan.discovered > 0) {
+              setResult("success"); setBusy(false);
+              onInstalled();
+              return;
+            }
           } catch { /* ignore */ }
-          onInstalled();
+          // Installed but no running gateway → switch to init form
+          setHostStatus("installed");
+          setInstalledVersion(selectedVersion);
+          setResult(null); setBusy(false);
+          setSteps([]);
+        } else {
+          setResult("error"); setBusy(false);
         }
       },
     );
+    if (outcome === "disconnected") {
+      await pollInstallStatus();
+    }
   };
+
+  const initGateway = async () => {
+    setBusy(true); setInitMsg(null);
+    try {
+      await post(`/lifecycle/host/${host.id}/init-gateway`, {
+        port: parseInt(gwPort) || 18789,
+        token: gwToken || undefined,
+        profile: gwProfile || undefined,
+      });
+      setInitMsg("Gateway started! Scanning...");
+      await post(`/hosts/${host.id}/scan`, {});
+      onInstalled();
+    } catch (e: any) {
+      setInitMsg(`Error: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const [rescanning, setRescanning] = useState(false);
+
+  const rescan = async () => {
+    setRescanning(true);
+    try {
+      const scan = await post<{ discovered: number }>(`/hosts/${host.id}/scan`, {});
+      if (scan.discovered > 0) {
+        onInstalled();
+        return;
+      }
+      // No instances found — re-check install status
+      const st = await get<{ status: string; version?: string }>(`/lifecycle/host/${host.id}/install-status`);
+      if (st.status === "installed" && st.version) {
+        setHostStatus("installed");
+        setInstalledVersion(st.version);
+      } else {
+        setHostStatus("not_installed");
+      }
+    } catch { /* ignore */ }
+    finally { setRescanning(false); }
+  };
+
+  const inputCls = "w-full bg-s2 border border-edge rounded px-2 py-1.5 text-xs text-ink placeholder:text-ink-3";
 
   return (
     <div className="bg-s1 border border-edge rounded-card p-4 shadow-card border-dashed">
       <div className="flex items-center gap-2 mb-2">
         <span className="relative inline-flex h-2 w-2">
-          <span className="relative inline-block w-2 h-2 rounded-full bg-warn" />
+          <span className={`relative inline-block w-2 h-2 rounded-full ${hostStatus === "installed" ? "bg-cyan" : "bg-warn"}`} />
         </span>
         <span className="font-medium text-ink truncate">{host.label}</span>
+        {installedVersion && <span className="font-mono text-xs text-ink-3">v{installedVersion}</span>}
+        <button
+          onClick={rescan}
+          disabled={rescanning}
+          className="ml-auto text-ink-3 hover:text-ink transition-colors disabled:opacity-50"
+          title="Rescan host"
+        >
+          <RefreshCw size={14} className={rescanning ? "animate-spin" : ""} />
+        </button>
       </div>
       <p className="text-xs text-ink-3 mb-1">{host.username}@{host.host}:{host.port}</p>
-      {!busy && !result && <p className="text-xs text-warn mb-3">OpenClaw not installed</p>}
+
+      {/* Step progress */}
       {steps.length > 0 && (
         <div className="mb-3 space-y-1">
           {steps.map((s, i) => (
@@ -479,26 +649,53 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
       {result === "error" && (
         <p className="text-xs text-danger mb-2">Installation failed. Check server logs or try again.</p>
       )}
-      {!busy && result !== "success" && (
+
+      {hostStatus === "checking" && (
+        <p className="text-xs text-ink-3 mb-3">Checking host status...</p>
+      )}
+
+      {/* State: Not installed → show install UI */}
+      {hostStatus === "not_installed" && !busy && result !== "success" && (
         <div className="space-y-2">
+          <p className="text-xs text-warn">OpenClaw not installed</p>
           {versionOptions.length > 0 && (
-            <select
-              value={selectedVersion}
-              onChange={(e) => setSelectedVersion(e.target.value)}
-              className="w-full bg-s2 border border-edge rounded px-2 py-1.5 text-xs text-ink"
-            >
+            <select value={selectedVersion} onChange={(e) => setSelectedVersion(e.target.value)} className={inputCls}>
               {versionOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           )}
-          <button
-            onClick={install}
-            disabled={busy}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-          >
-            <Download size={14} />
-            Install OpenClaw
+          <button onClick={install} disabled={busy}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+            <Download size={14} /> Install OpenClaw
+          </button>
+        </div>
+      )}
+
+      {/* State: Installed but no gateway → show init form */}
+      {hostStatus === "installed" && !busy && result !== "success" && (
+        <div className="space-y-2">
+          <p className="text-xs text-cyan">OpenClaw installed, no gateway running</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-ink-3 mb-0.5">Port</label>
+              <input value={gwPort} onChange={(e) => setGwPort(e.target.value)} placeholder="18789" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-3 mb-0.5">Profile</label>
+              <input value={gwProfile} onChange={(e) => setGwProfile(e.target.value)} placeholder="default" className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-ink-3 mb-0.5">Token (optional)</label>
+            <input value={gwToken} onChange={(e) => setGwToken(e.target.value)} type="password" placeholder="Gateway auth token" className={inputCls} />
+          </div>
+          {initMsg && (
+            <p className={`text-xs ${initMsg.startsWith("Error") ? "text-danger" : "text-ok"}`}>{initMsg}</p>
+          )}
+          <button onClick={initGateway} disabled={busy}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-ok/10 hover:bg-ok/20 text-ok rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+            <Play size={14} /> Initialize Gateway
           </button>
         </div>
       )}
