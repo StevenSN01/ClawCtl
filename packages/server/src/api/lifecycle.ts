@@ -276,6 +276,14 @@ export function lifecycleRoutes(hostStore: HostStore, manager: InstanceManager, 
     try {
       const config = await readRemoteConfig(exec, configDir);
       if (!config.models) config.models = {};
+      // Sanitize: strip ClawCtl-internal fields, ensure required 'models' array
+      for (const [, p] of Object.entries(providers)) {
+        if (p && typeof p === "object") {
+          delete p._oauthRefreshToken;
+          delete p._oauthExpiresAt;
+          if (!p.models) p.models = [];
+        }
+      }
       config.models.providers = providers;
       await writeRemoteConfig(exec, configDir, config);
       auditLog(db, c, "lifecycle.providers", "LLM providers updated", id);
@@ -303,13 +311,14 @@ export function lifecycleRoutes(hostStore: HostStore, manager: InstanceManager, 
       if (!config.models) config.models = {};
       if (!config.models.providers) config.models.providers = {};
       const existing = config.models.providers.openai || {};
+      // Only write fields that OpenClaw recognizes — _oauth* are ClawCtl-internal
+      // and cause config validation failure. 'models' array is required by schema.
       config.models.providers.openai = {
         ...existing,
         baseUrl: existing.baseUrl || "https://api.openai.com/v1",
         auth: "oauth",
         apiKey: status.credentials.accessToken,
-        _oauthRefreshToken: status.credentials.refreshToken,
-        _oauthExpiresAt: status.credentials.expiresAt,
+        models: existing.models || [],
       };
       await writeRemoteConfig(exec, configDir, config);
       clearOAuthFlow();

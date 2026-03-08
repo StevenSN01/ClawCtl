@@ -1031,30 +1031,28 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
 
                 {oauthStatus === "waiting" && (
                   <div className="space-y-3">
-                    <p className="text-sm text-ink-2">Open the link below to sign in with OpenAI:</p>
+                    <p className="text-sm text-ink-2">Open the authorization URL to sign in with OpenAI:</p>
                     {oauthAuthUrl && (
-                      <div className="space-y-2">
+                      <div className="bg-s2 border border-edge rounded-lg p-2.5">
+                        <p className="text-xs text-ink-3 font-mono break-all mb-2 select-all">{oauthAuthUrl}</p>
                         <div className="flex gap-2">
-                          <a
-                            href={oauthAuthUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex-1 px-4 py-2 bg-brand hover:bg-brand-light rounded-lg text-sm text-center font-medium transition-colors"
-                          >
-                            Open OpenAI Login
-                          </a>
                           <button
                             onClick={() => { navigator.clipboard.writeText(oauthAuthUrl); setMessage("URL copied"); }}
-                            className="px-3 py-2 bg-s2 border border-edge rounded-lg text-xs hover:bg-s3 transition-colors"
+                            className="flex-1 px-3 py-1.5 bg-s1 border border-edge hover:border-brand rounded-lg text-xs text-ink-2 hover:text-ink transition-colors"
                           >
                             Copy URL
                           </button>
+                          <button
+                            onClick={() => window.open(oauthAuthUrl, "_blank", "width=600,height=700")}
+                            className="flex-1 px-3 py-1.5 bg-brand hover:bg-brand-light rounded-lg text-xs font-medium transition-colors"
+                          >
+                            Open in Browser
+                          </button>
                         </div>
-                        <p className="text-[10px] text-ink-3">Waiting for callback... After sign-in you'll be redirected automatically.</p>
                       </div>
                     )}
-                    <div className="border-t border-edge pt-2">
-                      <p className="text-xs text-ink-3 mb-1">If callback didn't reach ClawCtl, paste the redirect URL manually:</p>
+                    <p className="text-xs text-ink-3">Waiting for callback... After sign-in, paste the redirect URL below:</p>
+                    <div>
                       <div className="flex gap-2">
                         <input
                           value={oauthManualUrl}
