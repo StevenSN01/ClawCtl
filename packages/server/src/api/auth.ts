@@ -34,6 +34,7 @@ export function authRoutes(userStore: UserStore, secret: string, db: Database.Da
     const user = userStore.createUser(username, password, "admin");
     const token = createToken({ userId: user.id, username: user.username, role: user.role }, secret);
     setCookie(c, TOKEN_COOKIE, token, { httpOnly: true, sameSite: "Lax", maxAge: COOKIE_MAX_AGE, path: "/" });
+    c.set("user", { userId: user.id, username: user.username, role: user.role });
     auditLog(db, c, "auth.setup", `Initial admin account created: ${user.username}`);
     return c.json({ user: { id: user.id, username: user.username, role: user.role }, token });
   });
@@ -46,11 +47,13 @@ export function authRoutes(userStore: UserStore, secret: string, db: Database.Da
     }
     const user = userStore.authenticate(username, password);
     if (!user) {
+      c.set("user", { userId: 0, username, role: "auditor" as const });
       auditLog(db, c, "auth.login-failed", `Failed login attempt for: ${username}`);
       return c.json({ error: "Invalid credentials" }, 401);
     }
     const token = createToken({ userId: user.id, username: user.username, role: user.role }, secret);
     setCookie(c, TOKEN_COOKIE, token, { httpOnly: true, sameSite: "Lax", maxAge: COOKIE_MAX_AGE, path: "/" });
+    c.set("user", { userId: user.id, username: user.username, role: user.role });
     auditLog(db, c, "auth.login", `User logged in: ${user.username} (${user.role})`);
     return c.json({ user: { id: user.id, username: user.username, role: user.role }, token });
   });
