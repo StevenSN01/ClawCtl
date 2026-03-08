@@ -1780,7 +1780,7 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
         ch.accounts.map((acc: any) => {
           const isEditing = editingAccount?.channel === ch.type && editingAccount?.accountId === acc.accountId;
           const statusLabel = !acc.enabled ? "disabled" : acc.connected ? "connected" : acc.running ? "starting" : acc.lastError ? "error" : "stopped";
-          const statusColor = statusLabel === "connected" ? "bg-ok" : statusLabel === "error" ? "bg-danger" : statusLabel === "starting" ? "bg-warn" : "bg-ink-3";
+          const statusColor = statusLabel === "connected" ? "bg-ok" : statusLabel === "error" ? "bg-danger" : statusLabel === "starting" ? "bg-warn" : "bg-ink-2";
 
           return (
             <div key={`${ch.type}-${acc.accountId}`} className="bg-s1 border border-edge rounded-card shadow-card overflow-hidden">
@@ -1794,7 +1794,7 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`inline-block w-2 h-2 rounded-full ${statusColor}`} />
-                  <span className={`text-xs ${statusLabel === "connected" ? "text-ok" : statusLabel === "error" ? "text-danger" : "text-ink-3"}`}>
+                  <span className={`text-xs ${statusLabel === "connected" ? "text-ok" : statusLabel === "error" ? "text-danger" : statusLabel === "starting" ? "text-warn" : "text-ink-2"}`}>
                     {statusLabel}
                   </span>
                 </div>
@@ -1817,10 +1817,18 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
                   {acc.dmPolicy && <div><span className="text-ink-3">DM:</span> <span className="text-ink">{acc.dmPolicy}</span></div>}
                   {acc.groupPolicy && <div><span className="text-ink-3">Group:</span> <span className="text-ink">{acc.groupPolicy}</span></div>}
                   {acc.allowFrom?.length > 0 && (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 flex-wrap">
                       <span className="text-ink-3">Allow:</span>
                       {acc.allowFrom.map((u: string) => (
                         <span key={u} className="px-1.5 py-0.5 rounded bg-cyan-dim text-cyan text-[10px]">{u}</span>
+                      ))}
+                    </div>
+                  )}
+                  {acc.groupAllowFrom?.length > 0 && (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-ink-3">Group Allow:</span>
+                      {acc.groupAllowFrom.map((g: string) => (
+                        <span key={g} className="px-1.5 py-0.5 rounded bg-cyan-dim text-cyan text-[10px]">{g}</span>
                       ))}
                     </div>
                   )}
@@ -1925,7 +1933,7 @@ export function Instance() {
     { key: "config", label: "Config" },
     { key: "security", label: "Security" },
     { key: "agents", label: `Agents (${inst.agents.length})` },
-    { key: "channels", label: `Channels (${inst.channels.length})` },
+    { key: "channels", label: "Channels" },
     { key: "llm", label: "LLM" },
     { key: "control", label: "Control" },
   ];
