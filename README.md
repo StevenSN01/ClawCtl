@@ -56,6 +56,9 @@ Side-by-side config comparison with intelligent diff — flattened dot-path keys
 ### Agent Configuration
 Structured CRUD for agents — create, edit, delete agents with a form-based UI. Edit global defaults (model, thinking depth). Apply permission templates to agents with preview. Model combobox with available model list. Restart confirmation dialog after config changes.
 
+### Channel Management
+Full channel lifecycle management — view all connected channels across instances with detailed account-level status (connection state, last activity, reconnect attempts, errors). Edit channel policies (DM/group policy, allowlists) and messaging behavior (history limits, chunk settings) through a structured form. Operational controls: live connectivity probe, account logout, and enable/disable with restart confirmation. Top-level cross-instance channel overview for fleet-wide visibility.
+
 ### Lifecycle Control
 Start, stop, and restart OpenClaw instances remotely. View and edit raw `openclaw.json` config files. Real-time log streaming (auto-detects file / journalctl --user / journalctl system). Config snapshots — create, compare, restore. Install, upgrade, or **uninstall** OpenClaw on remote hosts with Node.js version verification. Uninstall streams progress via SSE — stops processes, disables systemd services, removes the npm package, and verifies cleanup.
 
@@ -154,6 +157,7 @@ Click **Scan** next to a host (or **Scan All**). ClawCtl will SSH into the serve
 
 - **Dashboard** — instance overview, topology graph, host-grouped cards
 - **Sessions** — browse sessions by host/instance, set aliases, generate summaries
+- **Channels** — cross-instance channel overview, click to manage per-instance
 - **Usage** — token trends, per-instance/agent breakdown, cost visibility
 - **Security** — permission audit, injection scanner, security templates
 - **Config** — compare configs with smart diff, snapshot history
@@ -185,8 +189,8 @@ packages/
       llm/         # Multi-provider LLM client
   web/             # React SPA
     src/
-      pages/       # Dashboard, Sessions, Usage, Security, Config, Tools,
-                   # Operations, Monitoring, Settings, Instance, Login
+      pages/       # Dashboard, Sessions, Channels, Usage, Security, Config,
+                   # Tools, Operations, Monitoring, Settings, Instance, Login
       components/  # Layout, shared UI (AgentForm, TemplateApplyModal, RestartDialog)
       hooks/       # useAuth, useInstances, useApi, etc.
       lib/         # API client
@@ -239,6 +243,10 @@ All API routes require authentication (except `/api/auth/*` and `/api/health`).
 | `/api/lifecycle/:id/providers` | GET | LLM providers (configured + auto-detected) |
 | `/api/lifecycle/:id/agents` | PUT | Update agent config (structured) |
 | `/api/lifecycle/:id/agents/:agentId` | DELETE | Remove agent from config |
+| `/api/lifecycle/:id/channels` | GET | Channel status with account details |
+| `/api/lifecycle/:id/channels/probe` | POST | Probe channel connectivity |
+| `/api/lifecycle/:id/channels/logout` | POST | Logout channel account |
+| `/api/lifecycle/:id/channels/config` | PUT | Update channel account config |
 | `/api/lifecycle/:id/logs` | GET | Stream logs (SSE) |
 | `/api/lifecycle/:id/snapshots` | GET, POST | List/create config snapshots |
 | `/api/lifecycle/snapshots/:id` | GET | Get snapshot detail |
@@ -266,7 +274,7 @@ Mounts `~/.openclaw*` directories read-only for instance auto-discovery.
 ## Testing
 
 ```bash
-npm run test:unit          # Backend unit tests (352 tests)
+npm run test:unit          # Backend unit tests (362 tests)
 npm run test:components    # Frontend component tests
 npm run test:e2e           # Playwright E2E tests
 npm run test:live          # Live integration tests (needs running OpenClaw)

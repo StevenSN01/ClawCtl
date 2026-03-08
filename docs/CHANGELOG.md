@@ -1,5 +1,26 @@
 # ClawSafeMng Changelog
 
+## 2026-03-08 (Session 6) — Channel Management Enhancement
+
+### Features
+
+- **Channel 详情数据层**: 新增 `ChannelAccountInfo`、`ChannelDetail`、`ChannelStatusResponse` 类型。GatewayClient 新增 `fetchChannelDetails(probe?)` 和 `channelLogout()` 方法，充分利用 Gateway `channels.status` RPC 返回的完整 `channelAccounts` 数据。
+- **Channel 配置合并逻辑**: `mergeChannelAccountConfig` 通过 10 字段允许列表 (enabled, dmPolicy, groupPolicy, allowFrom, groupAllowFrom, historyLimit, dmHistoryLimit, textChunkLimit, chunkMode, blockStreaming) 安全合并配置，阻止凭据字段 (botToken 等) 被意外修改。
+- **4 个 Channel 后端端点**: `GET /lifecycle/:id/channels` (状态详情)、`POST .../probe` (活体探测)、`POST .../logout` (账号登出)、`PUT .../config` (配置更新 + 快照 + 审计)。
+- **ChannelForm 组件**: 渠道配置编辑表单，包含 DM/Group 策略选择、允许列表 tag input、历史限制/分块设置数字输入、流式阻止开关。
+- **Instance Channels Tab**: 实例详情页新增 Channels 标签页，展示每个渠道账号的连接状态、时间戳、策略信息、重连次数和错误。支持内联编辑、启用/禁用切换、登出操作，保存后触发 RestartDialog。
+- **OverviewTab 渠道摘要卡片**: 概览页渠道区域从状态徽章列表改为可点击的摘要卡片 ("N channels, M running")，点击跳转 Channels 标签页。
+- **顶级 Channels 页面**: 跨实例渠道汇总页面，表格展示每个实例的渠道类型、账号数、运行/连接状态和最后活动时间。支持主机过滤。点击行跳转到对应实例的 Channels 标签页。
+- **Sidebar 导航更新**: 侧边栏 Sessions 下方新增 Channels 入口 (Radio 图标)。
+
+### 经验教训
+
+1. **字段允许列表防御凭据泄露**: Channel 配置更新必须通过允许列表过滤，因为同一个 config path 下既有策略字段也有凭据字段 (botToken, appSecret)。用 Set + `Object.entries().filter()` 实现。
+2. **Subagent 并行任务执行**: 独立任务 (如 OverviewTab 修改和 Channels 页面创建) 可以并行分发给不同 subagent，互不影响文件时可安全并行。
+3. **LSP 假阳性**: Vite 项目中 React UMD global 警告和通过对象字面量动态引用的 import 被报为 unused，均为 LSP 噪音，不影响编译和运行。
+
+---
+
 ## 2026-03-08 (Session 5) — UI 可读性 + 卸载 + 模型选择 + OAuth 改进
 
 ### Features
