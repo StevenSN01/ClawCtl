@@ -260,21 +260,34 @@ export async function streamInstall(
   // Step 2: npm
   if (!(await ensureNpm(exec, emit))) return false;
 
-  // Step 3: Install OpenClaw (nohup — survives SSH disconnect)
+  // Step 3: Check for concurrent install
+  const running = await exec.exec("ps aux | grep 'npm.*[i].*openclaw' | grep -v grep 2>/dev/null");
+  if (running.exitCode === 0 && running.stdout.trim()) {
+    await emit({ step: "Install check", status: "error", detail: "Another install is already in progress" });
+    return false;
+  }
+
+  // Step 4: Install OpenClaw (nohup — survives SSH disconnect)
   const pkg = version ? `openclaw@${version}` : "openclaw@latest";
   await emit({ step: `Install ${pkg}`, status: "running" });
   const hasSudo = (await exec.exec("command -v sudo >/dev/null 2>&1 && echo yes")).stdout.trim() === "yes";
   const sudoPrefix = hasSudo ? "sudo " : "";
-  const r = await execLong(exec, `${sudoPrefix}npm i -g ${pkg}`, 180_000);
+  const r = await execLong(exec, `${sudoPrefix}npm i -g ${pkg}`, 300_000);
   if (r.exitCode !== 0) {
     await emit({ step: `Install ${pkg}`, status: "error", detail: (r.stderr || r.stdout).slice(0, 200) });
     return false;
   }
   await emit({ step: `Install ${pkg}`, status: "done" });
 
-  // Step 4: Verify
+  // Step 5: Verify — check binary and fix bin link if needed
   await emit({ step: "Verify installation", status: "running" });
-  const verify = await exec.exec("openclaw --version 2>/dev/null");
+  let verify = await exec.exec("openclaw --version 2>/dev/null");
+  if (verify.exitCode !== 0 || !verify.stdout.trim()) {
+    // bin link may be missing — try to rebuild
+    await emit({ step: "Verify installation", status: "running", detail: "Bin link missing, rebuilding..." });
+    await exec.exec(`${sudoPrefix}npm link openclaw 2>/dev/null; ${sudoPrefix}npm rebuild -g openclaw 2>/dev/null`);
+    verify = await exec.exec("openclaw --version 2>/dev/null");
+  }
   if (verify.exitCode === 0 && verify.stdout.trim()) {
     await emit({ step: "Verify installation", status: "done", detail: `v${verify.stdout.trim()}` });
     return true;

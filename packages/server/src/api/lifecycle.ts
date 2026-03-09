@@ -587,9 +587,12 @@ RestartSec=5
 [Install]
 WantedBy=default.target`;
 
+    // Write unit file first, then run systemd commands separately
+    // (heredoc + && in one command causes the delimiter to merge with the next command)
+    const writeUnit = `mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/${svcName} << 'CLAWCTL_UNIT'\n${unitContent}\nCLAWCTL_UNIT`;
+    await exec.exec(writeUnit);
+
     const setupCmd = [
-      "mkdir -p ~/.config/systemd/user",
-      `cat > ~/.config/systemd/user/${svcName} << 'CLAWCTL_UNIT'\n${unitContent}\nCLAWCTL_UNIT`,
       `${xdgPrefix} systemctl --user daemon-reload`,
       `${xdgPrefix} systemctl --user enable ${svcName}`,
       `${xdgPrefix} systemctl --user start ${svcName}`,
@@ -600,16 +603,28 @@ WantedBy=default.target`;
       return c.json({ error: `Gateway setup failed: ${(installR.stderr || installR.stdout).slice(0, 300)}` }, 500);
     }
 
-    // Wait and verify
-    await new Promise((r) => setTimeout(r, 2000));
+    // Wait for Gateway to fully start (it may rewrite config with auto-generated token)
+    await new Promise((r) => setTimeout(r, 3000));
     const check = await exec.exec(`${xdgPrefix} systemctl --user is-active ${svcName} 2>/dev/null`);
     if (check.stdout.trim() !== "active") {
       const log = await exec.exec(`${xdgPrefix} journalctl --user -u ${svcName} -n 10 --no-pager 2>/dev/null`);
       return c.json({ error: `Gateway not active: ${log.stdout.slice(0, 300)}` }, 500);
     }
 
+    // Re-read config to pick up any token the Gateway auto-generated on first boot
+    const freshConfig = await exec.exec(`cat ${configDir}/openclaw.json 2>/dev/null`);
+    let freshToken: string | undefined;
+    try {
+      const parsed = JSON.parse(freshConfig.stdout);
+      freshToken = parsed?.gateway?.auth?.token;
+    } catch { /* keep original token */ }
+
+    // Remove stale instance (registered without token) so rescan picks up the fresh one
+    const instanceId = `ssh-${hostId}-${profileName || "default"}`;
+    manager.removeInstance(instanceId);
+
     auditLog(db, c, "lifecycle.init-gateway", `Initialized gateway on host ${hostId} port=${gwPort}`, String(hostId));
-    return c.json({ ok: true, version: ver.stdout.trim() });
+    return c.json({ ok: true, version: ver.stdout.trim(), token: freshToken });
   });
 
   // --- Install status check (for recovery after stream disconnect) ---

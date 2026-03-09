@@ -125,6 +125,7 @@ export function Settings() {
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [installing, setInstalling] = useState<number | null>(null);
   const [installMsg, setInstallMsg] = useState<string | null>(null);
+  const [installStep, setInstallStep] = useState<string | null>(null);
   // Confirm dialogs
   const [confirmDeleteHost, setConfirmDeleteHost] = useState<RemoteHost | null>(null);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<UserInfo | null>(null);
@@ -669,20 +670,69 @@ export function Settings() {
                       {!hasInstances && (
                         <button
                           onClick={async () => {
-                            setInstalling(h.id); setInstallMsg(null); setScanMsg(null);
+                            if (installing !== null) return;
+                            setInstalling(h.id); setInstallMsg(null); setScanMsg(null); setInstallStep(null);
+                            let streamOk = false;
                             try {
-                              const result = await post<{ success: boolean; output: string }>(`/lifecycle/host/${h.id}/install`, {});
-                              setInstallMsg(result.success
-                                ? `${h.label}: OpenClaw installed successfully. Click Scan to discover instances.`
-                                : `${h.label}: Install failed — ${result.output.slice(0, 200)}`
-                              );
-                            } catch (e: any) { setInstallMsg(`${h.label}: ${e.message}`); }
-                            finally { setInstalling(null); }
+                              const res = await fetch(`/api/lifecycle/host/${h.id}/install`, {
+                                method: "POST",
+                                credentials: "include",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({}),
+                              });
+                              if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+                              const reader = res.body.getReader();
+                              const decoder = new TextDecoder();
+                              let buf = "";
+                              while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+                                buf += decoder.decode(value, { stream: true });
+                                const lines = buf.split("\n");
+                                buf = lines.pop() || "";
+                                for (const line of lines) {
+                                  if (!line.startsWith("data: ")) continue;
+                                  try {
+                                    const ev = JSON.parse(line.slice(6));
+                                    if (ev.done) {
+                                      streamOk = true;
+                                      setInstallMsg(ev.success
+                                        ? `${h.label}: OpenClaw installed successfully. Click Scan to discover instances.`
+                                        : `${h.label}: Install failed`);
+                                      setInstallStep(null);
+                                    } else {
+                                      setInstallStep(`${ev.step}: ${ev.status}${ev.detail ? ` — ${ev.detail}` : ""}`);
+                                    }
+                                  } catch { /* skip malformed */ }
+                                }
+                              }
+                            } catch { /* stream disconnected */ }
+                            // Fallback: if stream broke, poll install-status
+                            if (!streamOk) {
+                              setInstallStep(t("settings.installChecking"));
+                              for (let i = 0; i < 40; i++) {
+                                await new Promise((r) => setTimeout(r, 5000));
+                                try {
+                                  const st = await get<{ status: string; version?: string; detail?: string }>(`/lifecycle/host/${h.id}/install-status`);
+                                  if (st.status === "installed") {
+                                    setInstallMsg(`${h.label}: OpenClaw v${st.version} installed. Click Scan to discover instances.`);
+                                    break;
+                                  } else if (st.status === "installing") {
+                                    setInstallStep(`${t("settings.installing")}... ${st.detail || ""}`);
+                                  } else {
+                                    setInstallMsg(`${h.label}: Install failed`);
+                                    break;
+                                  }
+                                } catch { break; }
+                              }
+                            }
+                            setInstallStep(null);
+                            setInstalling(null);
                           }}
                           disabled={scanning !== null || installing !== null}
                           className="text-brand hover:text-brand-light text-xs font-medium disabled:opacity-50"
                         >
-                          {installing === h.id ? t("settings.installing") : t("settings.installButton")}
+                          {installing === h.id ? (installStep || t("settings.installing")) : t("settings.installButton")}
                         </button>
                       )}
                       <button

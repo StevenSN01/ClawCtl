@@ -702,7 +702,8 @@ function EmptyHostCard({ host, onInstalled }: { host: RemoteHost; onInstalled: (
           )}
           <button onClick={initGateway} disabled={busy}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-ok/10 hover:bg-ok/20 text-ok rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
-            <Play size={14} /> {t("dashboard.emptyHost.initializeGateway")}
+            {busy ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
+            {busy ? t("dashboard.emptyHost.initializingGateway") : t("dashboard.emptyHost.initializeGateway")}
           </button>
         </div>
       )}
