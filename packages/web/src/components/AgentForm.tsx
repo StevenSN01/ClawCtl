@@ -31,11 +31,52 @@ const EXEC_SECURITY_OPTIONS = [
   { value: "disabled", tKey: "agents.execDisabled" },
 ];
 
+// Thinking levels per provider — sourced from OpenClaw src/auto-reply/thinking.ts
+const BASE_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "adaptive"];
+const XHIGH_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"];
+const BINARY_THINKING_LEVELS = ["off", "on"];
+
+// Models that support xhigh — from OpenClaw XHIGH_MODEL_REFS
+const XHIGH_MODELS = new Set([
+  "openai/gpt-5.4", "openai/gpt-5.4-pro", "openai/gpt-5.2",
+  "openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex",
+  "openai-codex/gpt-5.3-codex-spark", "openai-codex/gpt-5.2-codex",
+  "openai-codex/gpt-5.1-codex",
+  "github-copilot/gpt-5.2-codex", "github-copilot/gpt-5.2",
+]);
+// Also match by model ID alone (without provider prefix)
+const XHIGH_MODEL_IDS = new Set(
+  [...XHIGH_MODELS].map((m) => m.split("/")[1]?.toLowerCase()).filter(Boolean),
+);
+
+// Binary-only providers (z.ai, moonshot)
+const BINARY_THINKING_PROVIDERS = new Set(["zai", "z.ai", "z-ai", "moonshot"]);
+
+function getThinkingLevels(model: string): string[] {
+  const lower = model.toLowerCase();
+  // Check provider prefix for binary providers
+  const provider = lower.split("/")[0];
+  if (BINARY_THINKING_PROVIDERS.has(provider)) return BINARY_THINKING_LEVELS;
+  // Check xhigh support
+  if (XHIGH_MODELS.has(lower) || XHIGH_MODEL_IDS.has(lower.split("/").pop() || "")) {
+    return XHIGH_THINKING_LEVELS;
+  }
+  return BASE_THINKING_LEVELS;
+}
+
 const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
+  google: "Google (Gemini)",
+  moonshot: "Moonshot (Kimi)",
   deepseek: "DeepSeek",
-  google: "Google",
+  zhipu: "智谱 (GLM)",
+  qwen: "通义千问",
+  baichuan: "百川",
+  minimax: "MiniMax",
+  yi: "零一万物",
+  stepfun: "阶跃星辰",
+  ollama: "Ollama",
   other: "Other",
 };
 
@@ -157,12 +198,16 @@ export function AgentForm({ values, onChange, modelsByProvider, defaultModel, de
           {t("agents.thinkingLabel")}
           {!values.thinkingDefault && defaultThinking && <span className="ml-1">{t("agents.defaultSuffix", { model: defaultThinking })}</span>}
         </label>
-        <input
+        <select
           value={values.thinkingDefault}
           onChange={(e) => set("thinkingDefault", e.target.value)}
-          placeholder={defaultThinking || t("agents.thinkingPlaceholder")}
-          className="w-full px-3 py-2 text-sm bg-s2 border border-edge rounded text-ink placeholder:text-ink-3 focus:outline-none focus:border-cyan"
-        />
+          className="w-full px-3 py-2 text-sm bg-s2 border border-edge rounded text-ink focus:outline-none focus:border-cyan"
+        >
+          <option value="">{defaultThinking ? t("agents.thinkingInherit", { level: defaultThinking }) : t("agents.thinkingNotSet")}</option>
+          {getThinkingLevels(values.model || defaultModel).map((lvl) => (
+            <option key={lvl} value={lvl}>{lvl}</option>
+          ))}
+        </select>
       </div>
 
       {/* Tools Allow */}

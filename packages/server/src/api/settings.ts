@@ -68,8 +68,20 @@ export function settingsRoutes(db: Database.Database, llm: LlmClient) {
 
   // --- Model lists (static presets + cached API results) ---
 
+  const DEFAULT_BASE_URLS: Record<string, string> = {
+    moonshot: "https://api.moonshot.cn/v1",
+    deepseek: "https://api.deepseek.com/v1",
+    zhipu: "https://open.bigmodel.cn/api/paas/v4",
+    qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    baichuan: "https://api.baichuan-ai.com/v1",
+    minimax: "https://api.minimax.chat/v1",
+    yi: "https://api.lingyiwanwu.com/v1",
+    stepfun: "https://api.stepfun.com/v1",
+  };
+
   const PRESET_MODELS: Record<string, string[]> = {
     openai: [
+      "gpt-5.4",
       "gpt-5.3-codex", "gpt-5.3-codex-spark",
       "gpt-5.2", "gpt-5.2-chat-latest", "gpt-5.2-codex", "gpt-5.2-pro",
       "gpt-5.1", "gpt-5.1-chat-latest", "gpt-5.1-codex", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
@@ -93,8 +105,47 @@ export function settingsRoutes(db: Database.Database, llm: LlmClient) {
     azure: [
       "gpt-5.3-codex", "gpt-5.1-codex", "gpt-4o", "gpt-4o-mini", "gpt-4",
     ],
+    google: [
+      "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash",
+    ],
     ollama: [
-      "llama3", "llama3.1", "codellama", "mistral", "mixtral", "deepseek-coder",
+      "llama3", "llama3.3", "llama3.2", "llama3.1",
+      "qwen2.5", "qwen2.5-coder", "deepseek-r1", "deepseek-coder-v2",
+      "codellama", "mistral", "mixtral", "gemma2", "phi-4",
+    ],
+    moonshot: [
+      "kimi-latest", "kimi-thinking-preview",
+      "moonshot-v1-auto", "moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k",
+    ],
+    deepseek: [
+      "deepseek-chat", "deepseek-reasoner",
+    ],
+    zhipu: [
+      "glm-5", "glm-4.7", "glm-4.6",
+      "glm-4-plus", "glm-4-long", "glm-4-air", "glm-4-airx", "glm-4-flash", "glm-4-flashx",
+      "glm-z1-air", "glm-z1-flash",
+    ],
+    qwen: [
+      "qwen-max", "qwen-max-latest", "qwen-plus", "qwen-plus-latest",
+      "qwen-turbo", "qwen-turbo-latest", "qwen-long",
+      "qwen3-235b-a22b", "qwen3-32b", "qwen3-14b", "qwen3-8b",
+      "qwen2.5-72b-instruct", "qwen2.5-coder-32b-instruct",
+      "qwq-plus", "qwq-32b",
+    ],
+    baichuan: [
+      "Baichuan4-Air", "Baichuan4-Turbo", "Baichuan4",
+      "Baichuan3-Turbo", "Baichuan3-Turbo-128k",
+    ],
+    minimax: [
+      "MiniMax-Text-01", "abab6.5s-chat", "abab6.5t-chat", "abab5.5-chat",
+    ],
+    yi: [
+      "yi-lightning", "yi-large", "yi-large-turbo",
+      "yi-medium", "yi-medium-200k", "yi-spark",
+    ],
+    stepfun: [
+      "step-2-16k", "step-2-mini",
+      "step-1-256k", "step-1-128k", "step-1-32k",
     ],
   };
 
@@ -127,6 +178,21 @@ export function settingsRoutes(db: Database.Database, llm: LlmClient) {
         if (apiKey) {
           const res = await fetch("https://api.anthropic.com/v1/models?limit=100", {
             headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          });
+          if (res.ok) {
+            const data = await res.json() as { data?: Array<{ id: string }> };
+            fetched = (data.data || []).map((m) => m.id);
+          }
+        }
+      } else if (provider !== "ollama") {
+        // Generic OpenAI-compatible /v1/models query (works for most CN providers)
+        const apiKey = config.apiKey || "";
+        const base = config.baseUrl || DEFAULT_BASE_URLS[provider];
+        if (apiKey && base) {
+          const url = base.replace(/\/+$/, "") + "/models";
+          const res = await fetch(url, {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+            signal: AbortSignal.timeout(5000),
           });
           if (res.ok) {
             const data = await res.json() as { data?: Array<{ id: string }> };

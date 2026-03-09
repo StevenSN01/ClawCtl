@@ -151,17 +151,24 @@ export function Channels() {
                     <div className="flex items-center gap-2">
                       <Radio size={14} className="text-ink-3" />
                       <span className="text-ink">{row.channelLabel}</span>
-                      <span className="text-ink-3 text-xs">{row.channelType}</span>
+                      {row.channelLabel.toLowerCase() !== row.channelType.toLowerCase() && (
+                        <span className="text-ink-3 text-xs">{row.channelType}</span>
+                      )}
                     </div>
                   </td>
                   <td className="p-3 text-ink-2">{row.accountCount}</td>
                   <td className="p-3">
-                    <span className="text-ok">{row.connectedCount} {t("channels.connected")}</span>
-                    {row.runningCount > row.connectedCount && (
-                      <span className="text-ok ml-2">{row.runningCount - row.connectedCount} {t("channels.running")}</span>
+                    {row.connectedCount > 0 && (
+                      <span className="text-ok">{row.connectedCount} {t("channels.connected")}</span>
                     )}
-                    {row.accountCount > row.runningCount && (
-                      <span className="text-ink-3 ml-2">{row.accountCount - row.runningCount} {t("channels.stopped")}</span>
+                    {row.runningCount - row.connectedCount > 0 && (
+                      <span className={`text-ok ${row.connectedCount > 0 ? "ml-2" : ""}`}>{row.runningCount - row.connectedCount} {t("channels.running")}</span>
+                    )}
+                    {row.accountCount - row.runningCount > 0 && (
+                      <span className={`text-ink-3 ${row.runningCount > 0 ? "ml-2" : ""}`}>{row.accountCount - row.runningCount} {t("channels.stopped")}</span>
+                    )}
+                    {row.runningCount === 0 && row.connectedCount === 0 && (
+                      <span className="text-ink-3">{row.accountCount} {t("channels.stopped")}</span>
                     )}
                   </td>
                   <td className="p-3 text-ink-3">{timeAgo(row.lastActivity, t)}</td>

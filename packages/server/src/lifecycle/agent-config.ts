@@ -1,6 +1,7 @@
 // Grouped by provider, newest first within each group
 const MODELS_BY_PROVIDER: Record<string, string[]> = {
   openai: [
+    "openai-codex/gpt-5.4",
     "openai-codex/gpt-5.3-codex",
     "openai-codex/gpt-5.2-codex",
     "openai-codex/gpt-5.1-codex",
@@ -28,6 +29,43 @@ const MODELS_BY_PROVIDER: Record<string, string[]> = {
     "google/gemini-2.5-pro",
     "google/gemini-2.5-flash",
     "google/gemini-2.0-flash",
+  ],
+  moonshot: [
+    "moonshot/moonshot-v1-auto",
+    "moonshot/moonshot-v1-128k",
+    "moonshot/kimi-latest",
+    "moonshot/kimi-thinking-preview",
+  ],
+  zhipu: [
+    "zhipu/glm-5",
+    "zhipu/glm-4.7",
+    "zhipu/glm-4-plus",
+    "zhipu/glm-4-flash",
+    "zhipu/glm-z1-air",
+  ],
+  qwen: [
+    "qwen/qwen-max-latest",
+    "qwen/qwen-plus-latest",
+    "qwen/qwen-turbo-latest",
+    "qwen/qwq-plus",
+    "qwen/qwen3-235b-a22b",
+  ],
+  baichuan: [
+    "baichuan/Baichuan4-Air",
+    "baichuan/Baichuan4-Turbo",
+  ],
+  minimax: [
+    "minimax/MiniMax-Text-01",
+    "minimax/abab6.5s-chat",
+  ],
+  yi: [
+    "yi/yi-lightning",
+    "yi/yi-large",
+    "yi/yi-large-turbo",
+  ],
+  stepfun: [
+    "stepfun/step-2-16k",
+    "stepfun/step-1-256k",
   ],
 };
 
