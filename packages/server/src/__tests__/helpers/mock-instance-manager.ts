@@ -12,6 +12,21 @@ export class MockInstanceManager extends EventEmitter {
       this.instances.set(info.id, info);
       this.mockClients.set(info.id, {
         conn: info.connection,
+        rpc: async (method: string, _params?: any) => {
+          if (method === "config.get") {
+            return { hash: "mock-hash", parsed: { agents: { list: info.agents.map((a) => ({ id: a.id })) } } };
+          }
+          if (method === "config.patch") {
+            return { ok: true };
+          }
+          if (method === "skills.status") {
+            return { skills: [] };
+          }
+          if (method === "skills.install") {
+            return { ok: true, message: "Installed", stdout: "", stderr: "", code: 0 };
+          }
+          return {};
+        },
         fetchSessionHistory: async () => [
           { role: "user", content: "Hello" },
           { role: "assistant", content: "Hi there!" },

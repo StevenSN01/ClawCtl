@@ -90,7 +90,7 @@ app.route("/api/lifecycle", lifecycleRoutes(hostStore, manager, db));
 app.route("/api/assistant", assistantRoutes(hostStore, manager, llm, db));
 
 // Skills — catalog, templates, install/uninstall
-app.route("/api/skills", skillRoutes(db, manager));
+app.route("/api/skills", skillRoutes(db, manager, hostStore));
 
 // Serve frontend in production
 app.use("/*", serveStatic({ root: "../web/dist" }));

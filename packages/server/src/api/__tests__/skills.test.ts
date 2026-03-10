@@ -38,6 +38,30 @@ function createTestDb(): Database.Database {
   return db;
 }
 
+/** Parse SSE text into array of {event, data} */
+function parseSSE(text: string): { event: string; data: any }[] {
+  const events: { event: string; data: any }[] = [];
+  for (const block of text.split("\n\n")) {
+    let event = "";
+    let dataStr = "";
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event: ")) event = line.slice(7);
+      else if (line.startsWith("data: ")) dataStr = line.slice(6);
+    }
+    if (event && dataStr) {
+      try { events.push({ event, data: JSON.parse(dataStr) }); } catch {}
+    }
+  }
+  return events;
+}
+
+/** Read SSE response and return the "done" event data */
+async function readSSEDone(res: Response): Promise<any> {
+  const text = await res.text();
+  const events = parseSSE(text);
+  return events.find((e) => e.event === "done")?.data;
+}
+
 describe("Skills API routes", () => {
   let app: Hono;
   let db: Database.Database;
@@ -79,7 +103,7 @@ describe("Skills API routes", () => {
       expect(data.results.length).toBeGreaterThanOrEqual(1);
       const names = data.results.map((r: any) => r.name);
       expect(names).toContain("github");
-    });
+    }, 30_000);
 
     it("filters by tag", async () => {
       const res = await app.request("/skills/search?tag=macos");
@@ -105,7 +129,7 @@ describe("Skills API routes", () => {
       expect(res.status).toBe(200);
       const data = await res.json() as any;
       expect(data.results).toEqual([]);
-    });
+    }, 30_000);
 
     it("returns all when no filters", async () => {
       const res = await app.request("/skills/search");
@@ -325,7 +349,7 @@ describe("Skills API routes", () => {
       ]);
     });
 
-    it("validates and returns success count", async () => {
+    it("streams SSE events and returns success", async () => {
       const res = await app.request("/skills/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -335,9 +359,11 @@ describe("Skills API routes", () => {
         }),
       });
       expect(res.status).toBe(200);
-      const data = await res.json() as any;
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+      const data = await readSSEDone(res);
       expect(data.ok).toBe(true);
-      expect(data.installed).toBe(2); // 1 skill * 2 agents
+      expect(data.results).toBeDefined();
+      expect(data.results.length).toBe(1);
     });
 
     it("returns 400 for missing skills", async () => {
@@ -401,7 +427,7 @@ describe("Skills API routes", () => {
     });
 
     it("creates audit log entry", async () => {
-      await app.request("/skills/install", {
+      const res = await app.request("/skills/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -409,8 +435,161 @@ describe("Skills API routes", () => {
           targets: [{ instanceId: "inst-1", agentIds: ["a1"] }],
         }),
       });
+      // Must consume the SSE stream before checking DB
+      await readSSEDone(res);
       const ops = db.prepare("SELECT * FROM operations WHERE type = 'skill.install'").all() as any[];
       expect(ops.length).toBe(1);
+    });
+
+    it("calls skills.install RPC when status reports install options", async () => {
+      // Create a manager with skills.status returning install options
+      const mgr2 = new MockInstanceManager();
+      const rpcCalls: { method: string; params: any }[] = [];
+      const info = makeInstanceInfo({ id: "inst-rpc" });
+      mgr2.seed([info]);
+      // Override the mock client's rpc to track calls
+      const client = mgr2.getClient("inst-rpc") as any;
+      client.rpc = async (method: string, params?: any) => {
+        rpcCalls.push({ method, params });
+        if (method === "skills.status") {
+          return {
+            skills: [
+              { name: "github", eligible: false, install: [{ id: "brew-0", kind: "brew", label: "Install gh (brew)", bins: ["gh"] }] },
+            ],
+          };
+        }
+        if (method === "skills.install") {
+          return { ok: true, message: "Installed", stdout: "done", stderr: "", code: 0 };
+        }
+        if (method === "config.get") {
+          return { hash: "h", parsed: { agents: { list: [{ id: "a1" }] } } };
+        }
+        if (method === "config.patch") return { ok: true };
+        return {};
+      };
+
+      const app2 = new Hono();
+      app2.use("/*", mockAuthMiddleware());
+      app2.route("/skills", skillRoutes(db, mgr2 as any));
+
+      const res = await app2.request("/skills/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skills: [{ name: "github", source: "bundled" }],
+          targets: [{ instanceId: "inst-rpc", agentIds: ["a1"] }],
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+      const data = await readSSEDone(res);
+      expect(data.ok).toBe(true);
+
+      // Verify skills.install was called
+      const installCall = rpcCalls.find((c) => c.method === "skills.install");
+      expect(installCall).toBeDefined();
+      expect(installCall!.params).toEqual({ name: "github", installId: "brew-0", timeoutMs: 120_000 });
+
+      // Verify skillResults in response
+      expect(data.results[0].skillResults).toBeDefined();
+      expect(data.results[0].skillResults[0]).toEqual({ name: "github", installed: true });
+    });
+
+    it("deduplicates binary install for instances on same host", async () => {
+      const mgr2 = new MockInstanceManager();
+      const rpcCalls: { method: string; instanceId: string }[] = [];
+
+      // Two instances on same host (same URL hostname)
+      const info1 = makeInstanceInfo({ id: "inst-a", connection: { id: "inst-a", url: "ws://10.0.0.1:18789", status: "connected", label: "Instance A" } });
+      const info2 = makeInstanceInfo({ id: "inst-b", connection: { id: "inst-b", url: "ws://10.0.0.1:18790", status: "connected", label: "Instance B" } });
+      mgr2.seed([info1, info2]);
+
+      // Track RPC calls per instance
+      for (const id of ["inst-a", "inst-b"]) {
+        const cl = mgr2.getClient(id) as any;
+        cl.rpc = async (method: string, _params?: any) => {
+          rpcCalls.push({ method, instanceId: id });
+          if (method === "skills.status") {
+            return { skills: [{ name: "github", eligible: false, install: [{ id: "brew-0", kind: "brew" }], missing: { bins: ["gh"] } }] };
+          }
+          if (method === "skills.install") {
+            return { ok: true, message: "Installed", stdout: "", stderr: "", code: 0 };
+          }
+          if (method === "config.get") {
+            return { hash: "h", parsed: { agents: { list: [{ id: "a1" }] } } };
+          }
+          if (method === "config.patch") return { ok: true };
+          return {};
+        };
+      }
+
+      const app2 = new Hono();
+      app2.use("/*", mockAuthMiddleware());
+      app2.route("/skills", skillRoutes(db, mgr2 as any));
+
+      const res = await app2.request("/skills/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skills: [{ name: "github", source: "bundled" }],
+          targets: [
+            { instanceId: "inst-a", agentIds: ["a1"] },
+            { instanceId: "inst-b", agentIds: ["a1"] },
+          ],
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+      const data = await readSSEDone(res);
+      expect(data.ok).toBe(true);
+      expect(data.results.length).toBe(2);
+
+      // skills.install should only be called once (for the first instance on that host)
+      const installCalls = rpcCalls.filter((c) => c.method === "skills.install");
+      expect(installCalls.length).toBe(1);
+      expect(installCalls[0].instanceId).toBe("inst-a");
+
+      // Both results should show installed
+      expect(data.results[0].skillResults[0].installed).toBe(true);
+      expect(data.results[1].skillResults[0].installed).toBe(true);
+    });
+
+    it("skips install when skill is already eligible", async () => {
+      const mgr2 = new MockInstanceManager();
+      const rpcCalls: string[] = [];
+      const info = makeInstanceInfo({ id: "inst-e" });
+      mgr2.seed([info]);
+      const cl = mgr2.getClient("inst-e") as any;
+      cl.rpc = async (method: string) => {
+        rpcCalls.push(method);
+        if (method === "skills.status") {
+          return { skills: [{ name: "github", eligible: true }] };
+        }
+        if (method === "config.get") {
+          return { hash: "h", parsed: { agents: { list: [{ id: "a1" }] } } };
+        }
+        if (method === "config.patch") return { ok: true };
+        return {};
+      };
+
+      const app2 = new Hono();
+      app2.use("/*", mockAuthMiddleware());
+      app2.route("/skills", skillRoutes(db, mgr2 as any));
+
+      const res = await app2.request("/skills/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skills: [{ name: "github", source: "bundled" }],
+          targets: [{ instanceId: "inst-e", agentIds: ["a1"] }],
+        }),
+      });
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+      const data = await readSSEDone(res);
+      expect(data.ok).toBe(true);
+      // skills.install should NOT be called since skill is already eligible
+      expect(rpcCalls).not.toContain("skills.install");
+      expect(data.results[0].skillResults[0]).toEqual({ name: "github", installed: true });
     });
   });
 
@@ -435,7 +614,8 @@ describe("Skills API routes", () => {
       expect(res.status).toBe(200);
       const data = await res.json() as any;
       expect(data.ok).toBe(true);
-      expect(data.removed).toBe(2); // 2 skills * 1 agent
+      expect(data.results).toBeDefined();
+      expect(data.results.length).toBe(1); // 1 instance target
     });
 
     it("returns 400 for empty skills", async () => {

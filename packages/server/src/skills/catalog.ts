@@ -13,6 +13,8 @@ export interface SkillCatalogEntry {
   tags: string[];
   author?: string;
   downloads?: number;
+  stars?: number;
+  installs?: number;
   homepage?: string;
   requires?: { bins?: string[]; env?: string[]; os?: string[] };
 }
@@ -548,9 +550,62 @@ export function filterCatalog(opts: {
   return results;
 }
 
-/** Placeholder -- will be implemented in api/skills.ts via SSH. */
+const CLAWHUB_API = "https://clawhub.ai";
+const CLAWHUB_SEARCH_TIMEOUT = 8_000;
+
+/** Fetch detail for a single ClawHub skill (stats, author, moderation). Returns null on failure. */
+export async function fetchClawHubDetail(slug: string): Promise<{
+  downloads: number; stars: number; installs: number; author?: string; suspicious?: boolean;
+} | null> {
+  try {
+    const res = await fetch(`${CLAWHUB_API}/api/v1/skills/${encodeURIComponent(slug)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      skill?: { stats?: { downloads?: number; stars?: number; installsAllTime?: number } };
+      owner?: { handle?: string; displayName?: string };
+      moderation?: { isSuspicious?: boolean; isMalwareBlocked?: boolean };
+    };
+    return {
+      downloads: data.skill?.stats?.downloads || 0,
+      stars: data.skill?.stats?.stars || 0,
+      installs: data.skill?.stats?.installsAllTime || 0,
+      author: data.owner?.handle || data.owner?.displayName,
+      suspicious: data.moderation?.isSuspicious || data.moderation?.isMalwareBlocked || false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Search ClawHub marketplace via public API. Returns up to `limit` results starting at `offset`. */
 export async function searchClawHub(
-  _query: string,
+  query: string,
+  limit = 20,
+  offset = 0,
 ): Promise<SkillCatalogEntry[]> {
-  return [];
+  if (!query.trim()) return [];
+  try {
+    const url = `${CLAWHUB_API}/api/v1/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(CLAWHUB_SEARCH_TIMEOUT),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as { results?: { slug: string; displayName: string; summary?: string; score?: number; updatedAt?: number }[] };
+    if (!data.results) return [];
+
+    // Map search results to basic entries (fast — no detail calls)
+    return data.results.map((r) => ({
+      name: r.slug,
+      description: r.summary || r.displayName,
+      source: "clawhub" as const,
+      category: "utility" as SkillCategory,
+      tags: [],
+    }));
+  } catch {
+    return []; // Network error, timeout — silently degrade
+  }
 }

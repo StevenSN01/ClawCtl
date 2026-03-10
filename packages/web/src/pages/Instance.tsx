@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, Link, useSearchParams } from "react-router-dom";
-import { ChevronLeft, RefreshCw, ArrowUpDown, Play, Square, RotateCcw, Save, Terminal, Camera, GitCompare, Trash2, Users, Plus, Radio, LogOut, Search, Stethoscope } from "lucide-react";
+import { ChevronLeft, RefreshCw, ArrowUpDown, Play, Square, RotateCcw, Save, Terminal, Camera, GitCompare, Trash2, Users, Plus, Radio, LogOut, Search, Stethoscope, ShieldAlert } from "lucide-react";
 import { useInstances, type InstanceInfo } from "../hooks/useInstances";
 import { api, get, post, put } from "../lib/api";
 import { del } from "../lib/api";
@@ -2387,13 +2387,33 @@ function SkillsTab({ inst }: { inst: InstanceInfo }) {
   const [templates, setTemplates] = useState<{ id: string; name: string; name_zh?: string; skills: { name: string; source: string }[] }[]>([]);
   const [catalog, setCatalog] = useState<{ name: string; description: string; emoji?: string }[]>([]);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [suspiciousSkills, setSuspiciousSkills] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     get<{ templates: typeof templates }>("/skills/templates").then(r => setTemplates(r.templates || [])).catch(() => {});
     get<{ bundled: typeof catalog }>("/skills").then(r => setCatalog(r.bundled || [])).catch(() => {});
   }, []);
 
-  const agentSkills = inst.skills || [];
+  const agentSkills = (inst.skills || []).filter(sk => sk.status !== "missing");
+  const bundledNames = useMemo(() => new Set(catalog.map(c => c.name)), [catalog]);
+
+  // Check suspicious status for community (non-bundled) skills
+  useEffect(() => {
+    const community = agentSkills.filter(sk => !bundledNames.has(sk.name)).map(sk => sk.name);
+    if (community.length === 0 || bundledNames.size === 0) return;
+    let cancelled = false;
+    get<{ details: Record<string, { suspicious?: boolean }> }>(
+      `/skills/clawhub/details?slugs=${encodeURIComponent(community.join(","))}`,
+    ).then(res => {
+      if (cancelled || !res.details) return;
+      const sus = new Set<string>();
+      for (const [slug, d] of Object.entries(res.details)) {
+        if (d.suspicious) sus.add(slug);
+      }
+      setSuspiciousSkills(sus);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [agentSkills.length, bundledNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRemoveSkill(skillName: string) {
     if (!confirm(t("skills.instanceTab.confirmRemove", { skill: skillName }))) return;
@@ -2468,19 +2488,32 @@ function SkillsTab({ inst }: { inst: InstanceInfo }) {
               <th className="text-left px-4 py-2 font-medium">{t("skills.instanceTab.skillName")}</th>
               <th className="text-left px-4 py-2 font-medium">{t("skills.instanceTab.status")}</th>
               <th className="text-left px-4 py-2 font-medium">{t("skills.instanceTab.description")}</th>
-              <th className="text-right px-4 py-2 font-medium">{t("skills.instanceTab.actions")}</th>
+              <th className="text-right px-4 py-2 font-medium whitespace-nowrap">{t("skills.instanceTab.actions")}</th>
             </tr></thead>
             <tbody>
               {agentSkills.map(sk => (
                 <tr key={sk.name} className="border-b border-edge last:border-b-0">
-                  <td className="px-4 py-2 text-sm text-ink">{sk.name}</td>
+                  <td className="px-4 py-2 text-sm text-ink">
+                    <span className="flex items-center gap-1.5">
+                      {sk.name}
+                      {!bundledNames.has(sk.name) && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500">{t("skills.community")}</span>
+                      )}
+                      {suspiciousSkills.has(sk.name) && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 flex items-center gap-0.5">
+                          <ShieldAlert size={12} />
+                          {t("skills.suspiciousWarning")}
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-2">
                     <span className={`text-xs px-2 py-0.5 rounded ${
                       sk.status === "ready" ? "bg-ok/10 text-ok" : "bg-warn/10 text-warn"
                     }`}>{sk.status}</span>
                   </td>
                   <td className="px-4 py-2 text-xs text-ink-3">{sk.description || "\u2014"}</td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-4 py-2 text-right whitespace-nowrap">
                     <button onClick={() => handleRemoveSkill(sk.name)}
                       className="text-xs text-danger hover:text-danger/80">
                       {t("common.delete")}
@@ -2581,12 +2614,12 @@ export function Instance() {
           ><RefreshCw size={16} /></button>
         </div>
 
-        <div className="flex gap-1 mb-4 border-b border-edge pb-0">
+        <div className="flex gap-1 mb-4 border-b border-edge overflow-x-auto">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => { setSelectedAgentId(undefined); setActiveTab(tab.key); }}
-              className={`px-3 py-1.5 text-sm ${activeTab === tab.key ? "border-b-2 border-brand text-brand" : "text-ink-3 hover:text-ink"}`}
+              className={`px-3 py-1.5 text-sm whitespace-nowrap -mb-px ${activeTab === tab.key ? "border-b-2 border-brand text-brand" : "text-ink-3 hover:text-ink"}`}
             >
               {tab.label}
             </button>

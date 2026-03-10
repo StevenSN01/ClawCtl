@@ -81,6 +81,9 @@ Configure your LLM provider (OpenAI / Anthropic / Azure / Ollama) with a two-lev
 
 All actions are audit-logged. Config changes create automatic snapshots so you can always roll back. The assistant understands your full environment — every host, instance, and their connection status.
 
+### Skills Marketplace
+Two-tab interface: **Market** for discovery and **Installed** for management. Browse bundled skill catalog by category with grid/list toggle. Search triggers **ClawHub community marketplace** — results stream in with pagination ("Load More"). **Two-phase progressive loading** — fast search results first, then stars/downloads/author stats load asynchronously. Community skills display trust signals (author, star count, download count). **VirusTotal-powered suspicious skill detection** — flagged skills show red `ShieldAlert` badges in both marketplace cards and installed views. Installing a suspicious skill requires explicit user confirmation. Skills install across multiple instances via SSE streaming with per-instance progress. The **Installed** tab shows per-instance skill lists with community/suspicious badges and one-click uninstall. The `clawhub` CLI is auto-installed on remote hosts when needed.
+
 ---
 
 ## Auth & RBAC
@@ -173,6 +176,7 @@ Click **Scan** next to a host (or **Scan All**). ClawCtl will SSH into the serve
 - **Usage** — token trends, per-instance/agent breakdown, cost visibility
 - **Security** — permission audit, injection scanner, security templates
 - **Config** — compare configs with smart diff, snapshot history
+- **Skills** — marketplace with ClawHub community search, installed skill management with suspicious detection
 - **Tools** — permission matrix, step-by-step diagnostics
 - **Monitoring** — host health, CPU/memory, abnormal process alerts
 - **Operations** — audit trail of all lifecycle actions
@@ -198,10 +202,11 @@ packages/
       instances/   # Instance manager & SQLite store
       lifecycle/   # Instance lifecycle (service control, config, install, snapshots)
       executor/    # CommandExecutor abstraction (local/SSH command execution)
+      skills/      # Skill catalog, ClawHub marketplace integration
       llm/         # Multi-provider LLM client
   web/             # React SPA
     src/
-      pages/       # Dashboard, Sessions, Channels, Usage, Security, Config,
+      pages/       # Dashboard, Sessions, Channels, Usage, Security, Config, Skills,
                    # Tools, Operations, Monitoring, Settings, Instance, Login
       components/  # Layout, shared UI (AgentForm, TemplateApplyModal, RestartDialog)
       hooks/       # useAuth, useInstances, useApi, etc.
@@ -241,6 +246,12 @@ All API routes require authentication (except `/api/auth/*` and `/api/health`).
 | `/api/tools/:id/agents/:agentId/tools` | GET | Agent tool list |
 | `/api/operations` | GET, POST | Operation log |
 | `/api/settings` | GET, PUT | App settings (LLM config) |
+| `/api/skills` | GET | Bundled skill catalog with categories |
+| `/api/skills/search` | GET | Search skills (bundled + ClawHub), supports `offset`/`limit` pagination |
+| `/api/skills/templates` | GET | Skill scene templates |
+| `/api/skills/clawhub/details` | GET | Batch fetch ClawHub skill stats (stars, downloads, suspicious) |
+| `/api/skills/install` | POST | Install skills to instances (SSE streaming progress) |
+| `/api/skills/uninstall` | DELETE | Uninstall skills from instances |
 | `/api/digest` | POST | Multi-instance digest |
 | `/api/hosts` | GET, POST | Remote host management (admin only) |
 | `/api/hosts/:id` | PUT, DELETE | Update/delete remote host (admin only) |
@@ -286,7 +297,7 @@ Mounts `~/.openclaw*` directories read-only for instance auto-discovery.
 ## Testing
 
 ```bash
-npm run test:unit          # Backend unit tests (369 tests)
+npm run test:unit          # Backend unit tests (482 tests)
 npm run test:components    # Frontend component tests
 npm run test:e2e           # Playwright E2E tests
 npm run test:live          # Live integration tests (needs running OpenClaw)

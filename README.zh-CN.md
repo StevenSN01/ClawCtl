@@ -56,8 +56,11 @@ Token 消耗趋势图（Recharts），区分输入/输出 Token。按实例和 A
 ### Agent 配置
 结构化的 Agent CRUD — 表单式创建、编辑、删除 Agent。编辑全局默认值（模型、思考深度）。应用权限模板并预览变更。模型下拉框展示可用模型列表。配置变更后的重启确认对话框。
 
+### 频道管理
+完整的频道生命周期管理 — 查看所有跨实例连接的频道，展示账户级详情（连接状态、最后活跃、重连次数、错误）。编辑频道策略（DM/群组策略、白名单）和消息行为（历史限制、分块设置）。运维操作：在线连通性探测、账户登出、启停控制与重启确认。顶层跨实例频道概览，全局可视。
+
 ### 生命周期管控
-远程启动、停止、重启 OpenClaw 实例。查看和编辑原始 `openclaw.json` 配置文件。实时日志流（自动检测 file / journalctl --user / journalctl system）。配置快照 — 创建、对比、恢复。在远程主机上安装或升级 OpenClaw，含 Node.js 版本校验。
+远程启动、停止、重启 OpenClaw 实例。查看和编辑原始 `openclaw.json` 配置文件。实时日志流（自动检测 file / journalctl --user / journalctl system）。配置快照 — 创建、对比、恢复。在远程主机上安装、升级或**卸载** OpenClaw，含 Node.js 版本校验。卸载通过 SSE 流式推送进度 — 停止进程、禁用 systemd 服务、移除 npm 包并验证清理。
 
 ### 主机监控
 实时查看每台远程主机的 CPU、内存和运行时间。**异常进程检测** — 当 CPU 或内存偏高时，自动列出 Top 异常进程（PID、用户、CPU%、MEM%）。服务端 30s 缓存 + 请求去重，避免 SSH 连接风暴。
@@ -77,6 +80,9 @@ Token 消耗趋势图（Recharts），区分输入/输出 Token。按实例和 A
 - **答疑解惑** — "thinkingDefault 是什么意思？" → 调取内置 OpenClaw 文档，结合当前配置上下文回答
 
 所有操作自动记录审计日志。配置变更前自动创建快照，随时可回滚。AI 助手感知你的完整环境 — 每台主机、每个实例及其连接状态。
+
+### 技能市场
+双 Tab 界面：**市场**用于发现技能，**已安装**用于管理技能。按分类浏览内置技能目录，支持网格/列表切换。搜索时自动触发 **ClawHub 社区市场** — 结果流式加载，支持分页（"加载更多"）。**两阶段渐进加载** — 先快速返回搜索结果，再异步加载星标数、下载量、作者等信息。社区技能展示信任信号（作者、星标、下载量）。**VirusTotal 可疑技能检测** — 被标记的技能在市场卡片和已安装列表中均显示红色 `ShieldAlert` 徽章。安装可疑技能需用户二次确认。技能通过 SSE 流式安装到多个实例，显示逐实例进度。**已安装** Tab 展示每个实例的技能列表，标注社区/可疑状态，支持一键卸载。远程主机上的 `clawhub` CLI 会在需要时自动安装。
 
 ---
 
@@ -108,12 +114,22 @@ ClawCtl 使用 OpenClaw Gateway 的原生 WebSocket 协议通信：
 
 ---
 
+## 国际化 (i18n)
+
+前端支持**中文**和**英文**，自动检测语言：
+
+- **自动检测**：跟随浏览器/系统语言偏好
+- **手动切换**：设置页语言下拉框，持久化到 localStorage (`clawctl-lang`)
+- **技术栈**：`react-i18next` + `i18next` + `i18next-browser-languagedetector`
+- **语言文件**：`packages/web/src/locales/en.json` 和 `zh.json`
+
 ## 技术栈
 
 | 层 | 技术 |
 |----|------|
 | **后端** | Hono + Node.js, SQLite (better-sqlite3), WebSocket (ws), ssh2 |
 | **前端** | React + Tailwind CSS + Vite, React Router, ReactFlow, Recharts |
+| **i18n** | react-i18next, i18next-browser-languagedetector (中文 + 英文) |
 | **认证** | HMAC-SHA256 会话令牌, scryptSync 密码哈希, httpOnly cookies |
 | **SSH** | 基于 ssh2 的远程发现，自动端口转发隧道 |
 | **LLM** | 多供应商 (OpenAI / Anthropic / Azure / Ollama)，用于摘要、简报和注入扫描 |
@@ -154,9 +170,11 @@ npm run dev
 
 - **Dashboard** — 实例概览、拓扑图、按主机分组的实例卡片
 - **Sessions** — 按主机/实例浏览会话，设置别名，生成摘要
+- **Channels** — 跨实例频道概览，点击管理单个实例
 - **Usage** — Token 趋势图，按实例/Agent 细分，成本可视化
 - **Security** — 权限审计、注入扫描、安全模板
 - **Config** — 智能 Diff 对比配置，快照历史
+- **Skills** — 技能市场（ClawHub 社区搜索）、已安装技能管理、可疑检测
 - **Tools** — 权限矩阵，分步诊断
 - **Monitoring** — 主机健康、CPU/内存、异常进程告警
 - **Operations** — 所有生命周期操作的审计轨迹
@@ -182,11 +200,12 @@ packages/
       instances/   # 实例管理器与 SQLite 存储
       lifecycle/   # 实例生命周期（进程控制、配置、安装、快照）
       executor/    # CommandExecutor 抽象（本地/SSH 命令执行）
+      skills/      # 技能目录、ClawHub 市场集成
       llm/         # 多供应商 LLM 客户端
   web/             # React 单页应用
     src/
-      pages/       # Dashboard, Sessions, Usage, Security, Config, Tools,
-                   # Operations, Monitoring, Settings, Instance, Login
+      pages/       # Dashboard, Sessions, Channels, Usage, Security, Config, Skills,
+                   # Tools, Operations, Monitoring, Settings, Instance, Login
       components/  # 布局、通用 UI（AgentForm, TemplateApplyModal, RestartDialog）
       hooks/       # useAuth, useInstances, useApi 等
       lib/         # API 客户端
@@ -225,6 +244,12 @@ packages/
 | `/api/tools/:id/agents/:agentId/tools` | GET | Agent 工具列表 |
 | `/api/operations` | GET, POST | 操作日志 |
 | `/api/settings` | GET, PUT | 应用设置（LLM 配置） |
+| `/api/skills` | GET | 内置技能目录及分类 |
+| `/api/skills/search` | GET | 搜索技能（内置 + ClawHub），支持 `offset`/`limit` 分页 |
+| `/api/skills/templates` | GET | 技能场景模板 |
+| `/api/skills/clawhub/details` | GET | 批量获取 ClawHub 技能统计（星标、下载量、可疑状态） |
+| `/api/skills/install` | POST | 向实例安装技能（SSE 流式进度） |
+| `/api/skills/uninstall` | DELETE | 从实例卸载技能 |
 | `/api/digest` | POST | 多实例简报 |
 | `/api/hosts` | GET, POST | 远程主机管理（仅超管） |
 | `/api/hosts/:id` | PUT, DELETE | 更新/删除远程主机（仅超管） |
@@ -236,8 +261,13 @@ packages/
 | `/api/lifecycle/:id/restart` | POST | 重启实例 |
 | `/api/lifecycle/:id/config-file` | GET, PUT | 读写远程 openclaw.json |
 | `/api/lifecycle/:id/models` | GET | 从配置提取模型列表 |
+| `/api/lifecycle/:id/providers` | GET | LLM 供应商（已配置 + 自动发现） |
 | `/api/lifecycle/:id/agents` | PUT | 更新 Agent 配置（结构化） |
 | `/api/lifecycle/:id/agents/:agentId` | DELETE | 删除 Agent |
+| `/api/lifecycle/:id/channels` | GET | 频道状态及账户详情 |
+| `/api/lifecycle/:id/channels/probe` | POST | 探测频道连通性 |
+| `/api/lifecycle/:id/channels/logout` | POST | 登出频道账户 |
+| `/api/lifecycle/:id/channels/config` | PUT | 更新频道账户配置 |
 | `/api/lifecycle/:id/logs` | GET | 日志流（SSE） |
 | `/api/lifecycle/:id/snapshots` | GET, POST | 列出/创建配置快照 |
 | `/api/lifecycle/snapshots/:id` | GET | 快照详情 |
@@ -265,7 +295,7 @@ docker compose up --build
 ## 测试
 
 ```bash
-npm run test:unit          # 后端单元测试 (286 tests)
+npm run test:unit          # 后端单元测试 (482 tests)
 npm run test:components    # 前端组件测试
 npm run test:e2e           # Playwright E2E 测试
 npm run test:live          # 在线集成测试（需要运行中的 OpenClaw）

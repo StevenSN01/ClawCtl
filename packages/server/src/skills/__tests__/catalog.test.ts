@@ -4,6 +4,7 @@ import {
   getAllTags,
   filterCatalog,
   searchClawHub,
+  fetchClawHubDetail,
 } from "../catalog.js";
 
 describe("getBundledCatalog()", () => {
@@ -150,8 +151,32 @@ describe("filterCatalog()", () => {
 });
 
 describe("searchClawHub()", () => {
-  it("returns empty array (placeholder)", async () => {
-    const results = await searchClawHub("anything");
+  it("returns results from ClawHub API", async () => {
+    const results = await searchClawHub("law");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]).toHaveProperty("name");
+    expect(results[0]).toHaveProperty("source", "clawhub");
+    expect(results[0]).toHaveProperty("description");
+  }, 30_000);
+
+  it("returns empty array for empty query", async () => {
+    const results = await searchClawHub("");
     expect(results).toEqual([]);
   });
+});
+
+describe("fetchClawHubDetail()", () => {
+  it("returns stats and author for a known skill", async () => {
+    const detail = await fetchClawHubDetail("law");
+    expect(detail).not.toBeNull();
+    expect(detail).toHaveProperty("downloads");
+    expect(detail).toHaveProperty("stars");
+    expect(detail).toHaveProperty("installs");
+    expect(typeof detail!.downloads).toBe("number");
+  }, 10_000);
+
+  it("returns null for nonexistent skill", async () => {
+    const detail = await fetchClawHubDetail("nonexistent-xyz-99999");
+    expect(detail).toBeNull();
+  }, 10_000);
 });
