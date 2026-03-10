@@ -758,7 +758,7 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
   const [oauthExpiry, setOauthExpiry] = useState<number | null>(null);
   // Quota & cost state
   const [quotas, setQuotas] = useState<any[]>([]);
-  const [costEstimate, setCostEstimate] = useState<{ totalCost: number; byModel: Record<string, any>; matched: number; unmatched: number } | null>(null);
+  const [costEstimate, setCostEstimate] = useState<{ totalCost: number; byModel: Record<string, any>; matched: number; unmatched: number; sessionCount?: number; oldestSession?: number; newestSession?: number } | null>(null);
   const [quotaLoading, setQuotaLoading] = useState(false);
 
   const fetchQuota = async () => {
@@ -884,89 +884,107 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
 
   return (
     <div className="space-y-6">
-      {/* Quota & Cost Overview */}
-      {(quotas.length > 0 || costEstimate) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* OAuth Quota */}
-          {quotas.map((q, qi) => (
-            <div key={qi} className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">{q.displayName || q.provider}</h3>
-                <span className="text-xs text-ink-3">{q.plan || ""}</span>
-              </div>
-              {q.error ? (
-                <p className="text-xs text-danger">{q.error}</p>
-              ) : (
-                <div className="space-y-3">
-                  {/* Rate limit windows (Codex) */}
-                  {q.windows?.map((w: any, wi: number) => {
-                    const remaining = 100 - (w.usedPercent || 0);
-                    const resetDate = w.resetAt ? new Date(w.resetAt) : null;
-                    const barColor = remaining > 50 ? "bg-ok" : remaining > 20 ? "bg-warn" : "bg-danger";
-                    return (
-                      <div key={wi}>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="text-ink-2">{w.label} {t("instance.llm.window")}</span>
-                          <span className={remaining > 20 ? "text-ok" : "text-danger"}>
-                            {remaining.toFixed(1)}% {t("instance.llm.remaining")}
-                          </span>
-                        </div>
-                        <div className="h-2 bg-s2 rounded-full overflow-hidden">
-                          <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${w.usedPercent || 0}%` }} />
-                        </div>
-                        {resetDate && (
-                          <p className="text-[10px] text-ink-3 mt-0.5">{t("instance.llm.resetsAt")} {resetDate.toLocaleString()}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {/* Balance (API key providers: DeepSeek, Moonshot, Zhipu) */}
-                  {q.balance != null && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-ink-2">{t("instance.llm.balance")}</span>
-                      <span className={`text-sm font-semibold ${q.balance > 10 ? "text-ok" : q.balance > 1 ? "text-warn" : "text-danger"}`}>
-                        {q.currency === "CNY" ? "¥" : "$"}{q.balance.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
+      {/* Quota & Cost Overview — skeleton while loading, then real data */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {quotaLoading && !quotas.length && !costEstimate && (
+          <>
+            <div className="bg-s1 border border-edge rounded-card p-4 shadow-card animate-pulse">
+              <div className="h-4 w-24 bg-s2 rounded mb-3" />
+              <div className="h-2 bg-s2 rounded-full mb-2" />
+              <div className="h-2 bg-s2 rounded-full w-3/4" />
             </div>
-          ))}
+            <div className="bg-s1 border border-edge rounded-card p-4 shadow-card animate-pulse">
+              <div className="h-4 w-20 bg-s2 rounded mb-3" />
+              <div className="h-6 w-16 bg-s2 rounded mb-2" />
+              <div className="h-2 bg-s2 rounded w-full mb-1" />
+              <div className="h-2 bg-s2 rounded w-2/3" />
+            </div>
+          </>
+        )}
 
-          {/* Cost Estimate */}
-          {costEstimate && costEstimate.totalCost > 0 && (
-            <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">{t("instance.llm.costEstimate")}</h3>
-                <span className="text-lg font-bold text-warn">${costEstimate.totalCost.toFixed(4)}</span>
-              </div>
-              <div className="space-y-1.5">
-                {Object.entries(costEstimate.byModel)
-                  .sort(([, a]: any, [, b]: any) => (b.cost || 0) - (a.cost || 0))
-                  .map(([model, stats]: [string, any]) => (
-                    <div key={model} className="flex items-center justify-between text-xs">
-                      <span className="text-ink-2 font-mono truncate mr-2">{model || "unknown"}</span>
-                      <div className="flex gap-3 shrink-0">
-                        <span className="text-ink-3">{stats.sessions} {t("instance.llm.sessionCount")}</span>
-                        <span className="text-ink-3">{((stats.inputTokens + stats.outputTokens) / 1000).toFixed(0)}k tok</span>
-                        <span className={stats.cost != null ? "text-warn" : "text-ink-3"}>
-                          {stats.cost != null ? `$${stats.cost.toFixed(4)}` : "—"}
+        {/* Provider Quota / Balance cards */}
+        {quotas.map((q, qi) => (
+          <div key={qi} className="bg-s1 border border-edge rounded-card p-4 shadow-card">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">{q.displayName || q.provider}</h3>
+              {q.plan && <span className="text-xs text-ink-3">{q.plan}</span>}
+            </div>
+            {q.error ? (
+              <p className="text-xs text-danger">{q.error}</p>
+            ) : (
+              <div className="space-y-3">
+                {/* Rate limit windows (Codex) */}
+                {q.windows?.map((w: any, wi: number) => {
+                  const remaining = 100 - (w.usedPercent || 0);
+                  const resetDate = w.resetAt ? new Date(w.resetAt) : null;
+                  const barColor = remaining > 50 ? "bg-ok" : remaining > 20 ? "bg-warn" : "bg-danger";
+                  return (
+                    <div key={wi}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-ink-2">{w.label} {t("instance.llm.window")}</span>
+                        <span className={remaining > 20 ? "text-ok" : "text-danger"}>
+                          {remaining.toFixed(1)}% {t("instance.llm.remaining")}
                         </span>
                       </div>
+                      <div className="h-2 bg-s2 rounded-full overflow-hidden">
+                        <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${w.usedPercent || 0}%` }} />
+                      </div>
+                      {resetDate && (
+                        <p className="text-[10px] text-ink-3 mt-0.5">{t("instance.llm.resetsAt")} {resetDate.toLocaleString()}</p>
+                      )}
                     </div>
-                  ))}
+                  );
+                })}
+                {/* Balance (API-key providers) — hide $0 for subscription plans */}
+                {q.balance != null && !(q.plan && q.balance === 0) && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-ink-2">{t("instance.llm.balance")}</span>
+                    <span className={`text-sm font-semibold ${q.balance > 10 ? "text-ok" : q.balance > 1 ? "text-warn" : "text-danger"}`}>
+                      {q.currency === "CNY" ? "¥" : "$"}{q.balance.toFixed(2)}
+                    </span>
+                  </div>
+                )}
               </div>
-              {costEstimate.unmatched > 0 && (
-                <p className="text-[10px] text-ink-3 mt-2">{t("instance.llm.unmatchedModels", { count: costEstimate.unmatched })}</p>
-              )}
+            )}
+          </div>
+        ))}
+
+        {/* Cost Estimate */}
+        {costEstimate && costEstimate.totalCost > 0 && (
+          <div className="bg-s1 border border-edge rounded-card p-4 shadow-card">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-semibold text-ink-2 uppercase tracking-wider">{t("instance.llm.costEstimate")}</h3>
+              <span className="text-lg font-bold text-warn">${costEstimate.totalCost.toFixed(4)}</span>
             </div>
-          )}
-        </div>
-      )}
-      {quotaLoading && !quotas.length && !costEstimate && (
-        <div className="text-xs text-ink-3 text-center py-2 animate-pulse">{t("instance.llm.loadingQuota")}</div>
-      )}
+            {/* Time range label */}
+            <p className="text-[10px] text-ink-3 mb-3">
+              {costEstimate.sessionCount || 0} {t("instance.llm.sessionCount")}
+              {costEstimate.oldestSession && costEstimate.newestSession && (
+                <> &middot; {new Date(costEstimate.oldestSession).toLocaleDateString()} ~ {new Date(costEstimate.newestSession).toLocaleDateString()}</>
+              )}
+            </p>
+            <div className="space-y-1.5">
+              {Object.entries(costEstimate.byModel)
+                .sort(([, a]: any, [, b]: any) => (b.cost || 0) - (a.cost || 0))
+                .map(([model, stats]: [string, any]) => (
+                  <div key={model} className="flex items-center justify-between text-xs">
+                    <span className="text-ink-2 font-mono truncate mr-2">{model || "unknown"}</span>
+                    <div className="flex gap-3 shrink-0">
+                      <span className="text-ink-3">{stats.sessions} {t("instance.llm.sessionCount")}</span>
+                      <span className="text-ink-3">{((stats.inputTokens + stats.outputTokens) / 1000).toFixed(0)}k tok</span>
+                      <span className={stats.cost != null ? "text-warn" : "text-ink-3"}>
+                        {stats.cost != null ? `$${stats.cost.toFixed(4)}` : "—"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+            {costEstimate.unmatched > 0 && (
+              <p className="text-[10px] text-ink-3 mt-2">{t("instance.llm.unmatchedModels", { count: costEstimate.unmatched })}</p>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="bg-s1 border border-edge rounded-card shadow-card">
         <div className="flex items-center justify-between p-4 border-b border-edge">

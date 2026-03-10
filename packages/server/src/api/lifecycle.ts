@@ -1001,7 +1001,21 @@ WantedBy=default.target`;
         }
       }
 
-      return c.json({ totalCost, byModel, matched, unmatched });
+      // Compute session time range for display
+      let oldest = Infinity;
+      let newest = 0;
+      for (const s of sessions) {
+        const ts = s.updatedAt || 0;
+        if (ts && ts < oldest) oldest = ts;
+        if (ts > newest) newest = ts;
+      }
+
+      return c.json({
+        totalCost, byModel, matched, unmatched,
+        sessionCount: sessions.length,
+        oldestSession: oldest === Infinity ? null : oldest,
+        newestSession: newest || null,
+      });
     } catch (err: any) {
       return c.json({ error: err.message }, 500);
     }
