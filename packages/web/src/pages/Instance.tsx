@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { ChevronLeft, RefreshCw, ArrowUpDown, Play, Square, RotateCcw, Save, Terminal, Camera, GitCompare, Trash2, Users, Plus, Radio, LogOut, Search, Stethoscope } from "lucide-react";
 import { useInstances, type InstanceInfo } from "../hooks/useInstances";
-import { get, post, put } from "../lib/api";
+import { api, get, post, put } from "../lib/api";
 import { del } from "../lib/api";
 import { AgentForm, type AgentFormValues } from "../components/AgentForm";
 import { ChannelForm, type ChannelFormValues } from "../components/ChannelForm";
@@ -25,7 +25,7 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
 }
 
-type Tab = "overview" | "sessions" | "config" | "security" | "agents" | "channels" | "llm" | "control";
+type Tab = "overview" | "sessions" | "config" | "security" | "agents" | "channels" | "llm" | "skills" | "control";
 
 function OverviewTab({ inst, onSwitchTab, onSelectAgent }: { inst: InstanceInfo; onSwitchTab: (tab: Tab) => void; onSelectAgent: (agentId: string) => void }) {
   const { t } = useTranslation();
@@ -2329,6 +2329,197 @@ function ChannelsTab({ inst }: { inst: InstanceInfo }) {
   );
 }
 
+function AddSkillsDialog({ catalog, onInstall, onClose, t }: {
+  catalog: { name: string; description: string; emoji?: string }[];
+  onInstall: (names: string[]) => void;
+  onClose: () => void;
+  t: (k: string) => string;
+}) {
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const filtered = catalog.filter(sk =>
+    sk.name.toLowerCase().includes(search.toLowerCase()) ||
+    (sk.description || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div className="bg-deep border border-edge rounded-lg w-full max-w-lg max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-edge">
+          <h3 className="text-sm font-medium text-ink">{t("skills.instanceTab.addSkills")}</h3>
+          <button onClick={onClose} className="text-ink-3 hover:text-ink text-lg leading-none">&times;</button>
+        </div>
+        <div className="px-4 py-2">
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder={t("skills.searchPlaceholder")}
+            className="w-full bg-s1 border border-edge rounded px-3 py-1.5 text-sm text-ink placeholder:text-ink-3" />
+        </div>
+        <div className="flex-1 overflow-auto px-4 py-2 space-y-1">
+          {filtered.map(sk => (
+            <label key={sk.name} className="flex items-center gap-2 p-2 rounded hover:bg-s1 cursor-pointer">
+              <input type="checkbox" checked={selected.has(sk.name)}
+                onChange={() => {
+                  const next = new Set(selected);
+                  if (next.has(sk.name)) next.delete(sk.name); else next.add(sk.name);
+                  setSelected(next);
+                }} />
+              <span className="text-sm">{sk.emoji} {sk.name}</span>
+              <span className="text-xs text-ink-3 ml-auto">{sk.description}</span>
+            </label>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-edge">
+          <button onClick={onClose} className="text-sm text-ink-3 hover:text-ink px-3 py-1">{t("common.cancel")}</button>
+          <button onClick={() => onInstall([...selected])} disabled={selected.size === 0}
+            className="text-sm bg-brand text-white px-4 py-1.5 rounded disabled:opacity-50">
+            {t("skills.install")} ({selected.size})
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkillsTab({ inst }: { inst: InstanceInfo }) {
+  const { t, i18n } = useTranslation();
+  const [selectedAgent, setSelectedAgent] = useState(inst.agents[0]?.id || "");
+  const [templates, setTemplates] = useState<{ id: string; name: string; name_zh?: string; skills: { name: string; source: string }[] }[]>([]);
+  const [catalog, setCatalog] = useState<{ name: string; description: string; emoji?: string }[]>([]);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+
+  useEffect(() => {
+    get<{ templates: typeof templates }>("/skills/templates").then(r => setTemplates(r.templates || [])).catch(() => {});
+    get<{ bundled: typeof catalog }>("/skills").then(r => setCatalog(r.bundled || [])).catch(() => {});
+  }, []);
+
+  const agentSkills = inst.skills || [];
+
+  async function handleRemoveSkill(skillName: string) {
+    if (!confirm(t("skills.instanceTab.confirmRemove", { skill: skillName }))) return;
+    try {
+      await api("/skills/uninstall", {
+        method: "DELETE",
+        body: JSON.stringify({
+          skills: [skillName],
+          targets: [{ instanceId: inst.id, agentIds: [selectedAgent] }],
+        }),
+      });
+    } catch (err: any) {
+      alert(err.message);
+    }
+  }
+
+  async function handleAddSkills(skillNames: string[]) {
+    try {
+      await post("/skills/install", {
+        skills: skillNames.map(n => ({ name: n, source: "bundled" })),
+        targets: [{ instanceId: inst.id, agentIds: [selectedAgent] }],
+      });
+      setShowAddDialog(false);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  }
+
+  async function handleApplyTemplate(tpl: typeof templates[number]) {
+    const tplName = i18n.language === "zh" ? (tpl.name_zh || tpl.name) : tpl.name;
+    if (!confirm(t("skills.instanceTab.confirmApply", { template: tplName }))) return;
+    try {
+      await post("/skills/install", {
+        skills: tpl.skills,
+        targets: [{ instanceId: inst.id, agentIds: [selectedAgent] }],
+      });
+    } catch (err: any) {
+      alert(err.message);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Agent selector */}
+      <div className="flex items-center gap-3">
+        <label className="text-sm text-ink-2">{t("skills.instanceTab.agent")}</label>
+        <select value={selectedAgent} onChange={e => setSelectedAgent(e.target.value)}
+          className="bg-s1 border border-edge rounded px-3 py-1.5 text-sm text-ink">
+          {inst.agents.map(a => (
+            <option key={a.id} value={a.id}>{a.name || a.id}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Current skills table */}
+      <div className="bg-s1 border border-edge rounded-card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-edge">
+          <h3 className="text-sm font-medium text-ink">{t("skills.instanceTab.installedSkills")}</h3>
+          <div className="flex gap-2">
+            <button onClick={() => setShowAddDialog(true)}
+              className="text-xs bg-brand/10 text-brand hover:bg-brand/20 px-3 py-1 rounded">
+              {t("skills.instanceTab.addSkills")}
+            </button>
+          </div>
+        </div>
+
+        {agentSkills.length === 0 ? (
+          <p className="text-sm text-ink-3 p-4">{t("skills.instanceTab.noSkills")}</p>
+        ) : (
+          <table className="w-full">
+            <thead><tr className="text-xs text-ink-3 border-b border-edge">
+              <th className="text-left px-4 py-2 font-medium">{t("skills.instanceTab.skillName")}</th>
+              <th className="text-left px-4 py-2 font-medium">{t("skills.instanceTab.status")}</th>
+              <th className="text-left px-4 py-2 font-medium">{t("skills.instanceTab.description")}</th>
+              <th className="text-right px-4 py-2 font-medium">{t("skills.instanceTab.actions")}</th>
+            </tr></thead>
+            <tbody>
+              {agentSkills.map(sk => (
+                <tr key={sk.name} className="border-b border-edge last:border-b-0">
+                  <td className="px-4 py-2 text-sm text-ink">{sk.name}</td>
+                  <td className="px-4 py-2">
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      sk.status === "ready" ? "bg-ok/10 text-ok" : "bg-warn/10 text-warn"
+                    }`}>{sk.status}</span>
+                  </td>
+                  <td className="px-4 py-2 text-xs text-ink-3">{sk.description || "\u2014"}</td>
+                  <td className="px-4 py-2 text-right">
+                    <button onClick={() => handleRemoveSkill(sk.name)}
+                      className="text-xs text-danger hover:text-danger/80">
+                      {t("common.delete")}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Apply template section */}
+      <div className="bg-s1 border border-edge rounded-card p-4">
+        <h3 className="text-sm font-medium text-ink mb-3">{t("skills.instanceTab.applyTemplate")}</h3>
+        <div className="flex flex-wrap gap-2">
+          {templates.map(tpl => (
+            <button key={tpl.id} onClick={() => handleApplyTemplate(tpl)}
+              className="text-xs bg-s2 border border-edge hover:border-brand/30 px-3 py-1.5 rounded transition-colors">
+              {i18n.language === "zh" ? (tpl.name_zh || tpl.name) : tpl.name}
+              <span className="text-ink-3 ml-1">({tpl.skills.length})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Add skills dialog */}
+      {showAddDialog && (
+        <AddSkillsDialog
+          catalog={catalog}
+          onInstall={handleAddSkills}
+          onClose={() => setShowAddDialog(false)}
+          t={t}
+        />
+      )}
+    </div>
+  );
+}
+
 export function Instance() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
@@ -2371,6 +2562,7 @@ export function Instance() {
     { key: "agents", label: `${t("instance.agentsTab")} (${inst.agents.length})` },
     { key: "channels", label: t("instance.channelsTab") },
     { key: "llm", label: t("instance.llmTab") },
+    { key: "skills", label: t("instance.skillsTab") },
     { key: "control", label: t("instance.controlTab") },
   ];
 
@@ -2409,6 +2601,7 @@ export function Instance() {
           {activeTab === "agents" && <AgentsTab inst={inst} initialAgentId={selectedAgentId || searchParams.get("agent") || undefined} onSwitchTab={setActiveTab} />}
           {activeTab === "channels" && <ChannelsTab inst={inst} />}
           {activeTab === "llm" && <LlmTab inst={inst} />}
+          {activeTab === "skills" && <SkillsTab inst={inst} />}
           {activeTab === "control" && <ControlTab inst={inst} />}
         </div>
       </div>

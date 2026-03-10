@@ -346,6 +346,7 @@
     "agentsTab": "智能体",
     "channelsTab": "频道",
     "llmTab": "大模型",
+    "skillsTab": "Skill 管理",
     "controlTab": "控制",
     "overview": {
       "agents": "智能体",
@@ -753,6 +754,19 @@
     "bundled": "内置",
     "clawhub": "ClawHub",
     "noResults": "未找到匹配的 Skill",
+    "instanceTab": {
+      "agent": "Agent",
+      "installedSkills": "已安装的 Skill",
+      "addSkills": "添加 Skill",
+      "noSkills": "该 Agent 未配置任何 Skill",
+      "skillName": "Skill",
+      "status": "状态",
+      "description": "描述",
+      "actions": "操作",
+      "applyTemplate": "快速应用模板",
+      "confirmRemove": "确定从该 Agent 移除 \"{{skill}}\"？",
+      "confirmApply": "确定将模板 \"{{template}}\" 应用到该 Agent？"
+    },
     "categories": {
       "dev": "开发",
       "social": "社交",

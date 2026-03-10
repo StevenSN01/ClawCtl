@@ -346,6 +346,7 @@
     "agentsTab": "Agents",
     "channelsTab": "Channels",
     "llmTab": "LLM",
+    "skillsTab": "Skills",
     "controlTab": "Control",
     "overview": {
       "agents": "Agents",
@@ -753,6 +754,19 @@
     "bundled": "Bundled",
     "clawhub": "ClawHub",
     "noResults": "No skills found",
+    "instanceTab": {
+      "agent": "Agent",
+      "installedSkills": "Installed Skills",
+      "addSkills": "Add Skills",
+      "noSkills": "No skills configured for this agent",
+      "skillName": "Skill",
+      "status": "Status",
+      "description": "Description",
+      "actions": "Actions",
+      "applyTemplate": "Quick Apply Template",
+      "confirmRemove": "Remove skill \"{{skill}}\" from this agent?",
+      "confirmApply": "Apply template \"{{template}}\" to this agent?"
+    },
     "categories": {
       "dev": "Development",
       "social": "Social",
