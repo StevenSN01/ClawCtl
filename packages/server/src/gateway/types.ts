@@ -98,6 +98,8 @@ export interface SessionSummary {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
 }
 
 export interface SkillInfo {

@@ -284,6 +284,8 @@ export class GatewayClient extends EventEmitter {
       inputTokens: s.inputTokens,
       outputTokens: s.outputTokens,
       totalTokens: s.totalTokens,
+      cacheRead: s.cacheRead || 0,
+      cacheWrite: s.cacheWrite || 0,
     }));
   }
 

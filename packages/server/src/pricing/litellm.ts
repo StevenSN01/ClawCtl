@@ -11,6 +11,8 @@ const CACHE_TTL = 3_600_000; // 1 hour
 export interface ModelPricing {
   input_cost_per_token?: number;
   output_cost_per_token?: number;
+  cache_creation_input_token_cost?: number;
+  cache_read_input_token_cost?: number;
   max_tokens?: number;
   max_input_tokens?: number;
   max_output_tokens?: number;
@@ -33,6 +35,8 @@ export async function fetchPricing(): Promise<Record<string, ModelPricing>> {
       slim[key] = {
         input_cost_per_token: val.input_cost_per_token,
         output_cost_per_token: val.output_cost_per_token,
+        cache_creation_input_token_cost: val.cache_creation_input_token_cost,
+        cache_read_input_token_cost: val.cache_read_input_token_cost,
         max_tokens: val.max_tokens,
         max_input_tokens: val.max_input_tokens,
         max_output_tokens: val.max_output_tokens,
@@ -95,8 +99,15 @@ export function estimateCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
+  cacheRead = 0,
+  cacheWrite = 0,
 ): number | null {
   const p = lookupModelPrice(pricing, model);
   if (!p?.input_cost_per_token || !p?.output_cost_per_token) return null;
-  return inputTokens * p.input_cost_per_token + outputTokens * p.output_cost_per_token;
+  const cacheReadCost = p.cache_read_input_token_cost ?? p.input_cost_per_token;
+  const cacheCreationCost = p.cache_creation_input_token_cost ?? p.input_cost_per_token;
+  return inputTokens * p.input_cost_per_token
+    + outputTokens * p.output_cost_per_token
+    + cacheWrite * cacheCreationCost
+    + cacheRead * cacheReadCost;
 }

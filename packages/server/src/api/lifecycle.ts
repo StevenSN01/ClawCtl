@@ -976,22 +976,26 @@ WantedBy=default.target`;
       let totalCost = 0;
       let matched = 0;
       let unmatched = 0;
-      const byModel: Record<string, { inputTokens: number; outputTokens: number; sessions: number; cost: number | null }> = {};
+      const byModel: Record<string, { inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number; sessions: number; cost: number | null }> = {};
 
       for (const s of sessions) {
         const model = s.model || "";
         const input = s.inputTokens || 0;
         const output = s.outputTokens || 0;
+        const cr = s.cacheRead || 0;
+        const cw = s.cacheWrite || 0;
 
-        if (!byModel[model]) byModel[model] = { inputTokens: 0, outputTokens: 0, sessions: 0, cost: null };
+        if (!byModel[model]) byModel[model] = { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, sessions: 0, cost: null };
         byModel[model].inputTokens += input;
         byModel[model].outputTokens += output;
+        byModel[model].cacheRead += cr;
+        byModel[model].cacheWrite += cw;
         byModel[model].sessions++;
       }
 
       // Calculate cost per model
       for (const [model, stats] of Object.entries(byModel)) {
-        const cost = estimateCost(pricing, model, stats.inputTokens, stats.outputTokens);
+        const cost = estimateCost(pricing, model, stats.inputTokens, stats.outputTokens, stats.cacheRead, stats.cacheWrite);
         stats.cost = cost;
         if (cost !== null) {
           totalCost += cost;
