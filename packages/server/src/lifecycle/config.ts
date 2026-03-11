@@ -36,3 +36,36 @@ export async function writeAuthProfiles(exec: CommandExecutor, configDir: string
   const r = await exec.exec(`mkdir -p "${configDir}/agents/${agentId}/agent" && cat > "${path}" << 'CLAWCTL_EOF'\n${json}\nCLAWCTL_EOF`);
   if (r.exitCode !== 0) throw new Error(`Failed to write auth-profiles: ${r.stderr}`);
 }
+
+/** Remove a single profile from auth-profiles.json and clean up references */
+export async function deleteAuthProfile(
+  exec: CommandExecutor,
+  configDir: string,
+  agentId: string,
+  profileId: string,
+): Promise<void> {
+  const data = await readAuthProfiles(exec, configDir, agentId);
+  if (!data.profiles) return;
+
+  delete data.profiles[profileId];
+
+  // Clean up order references
+  if (data.order) {
+    for (const [provider, ids] of Object.entries(data.order) as [string, string[]][]) {
+      data.order[provider] = ids.filter((id: string) => id !== profileId);
+      if (data.order[provider].length === 0) delete data.order[provider];
+    }
+  }
+  // Clean up lastGood references
+  if (data.lastGood) {
+    for (const [provider, id] of Object.entries(data.lastGood) as [string, string][]) {
+      if (id === profileId) delete data.lastGood[provider];
+    }
+  }
+  // Clean up usageStats references
+  if (data.usageStats) {
+    delete data.usageStats[profileId];
+  }
+
+  await writeAuthProfiles(exec, configDir, agentId, data);
+}
