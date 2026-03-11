@@ -442,9 +442,11 @@ export function lifecycleRoutes(hostStore: HostStore, manager: InstanceManager, 
             const newKey = p.apiKey;
             // Verify key before writing
             const baseUrl = p.baseUrl || "";
-            const vResult = await verifyProviderKey(exec, providerName, newKey, baseUrl);
-            if (vResult.status === "invalid") {
-              return c.json({ error: `API key invalid for ${providerName}: ${vResult.error}` }, 400);
+            let vResult;
+            try {
+              vResult = await verifyProviderKey(exec, providerName, newKey, baseUrl);
+            } catch {
+              vResult = { status: "unknown" as const, error: "Verification failed" };
             }
 
             // Determine profile ID using first agent's profiles as reference

@@ -1131,7 +1131,7 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
               const p = providers[name];
               const preset = PROVIDER_PRESETS[name];
               const displayName = preset ? preset.label : name;
-              const provKeys = keys.filter(k => k.provider === name);
+              const provKeys = keys.filter(k => k.provider === name || k.profileId.startsWith(name + ":") || k.profileId.startsWith(name + "-"));
               return (
                 <div key={name} className="bg-s1 border border-edge rounded-card overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-edge">
