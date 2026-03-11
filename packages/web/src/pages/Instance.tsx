@@ -984,7 +984,8 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
       delete next[editOrigName];
     }
     const entry: any = { baseUrl: editing.baseUrl };
-    if (editing.apiKey) entry.apiKey = editing.apiKey;
+    // Don't send apiKey when in OAuth mode — token is already saved via /providers/oauth/save
+    if (editing.apiKey && openaiAuthMode !== "oauth") entry.apiKey = editing.apiKey;
     if (editing.auth && editing.auth !== "api-key") entry.auth = editing.auth;
     if (editing.api) entry.api = editing.api;
     if (editing.models.length > 0) entry.models = editing.models;
@@ -1381,6 +1382,18 @@ function LlmTab({ inst }: { inst: InstanceInfo }) {
                                 setOauthAuthUrl(null);
                                 setMessage(t("instance.llm.openaiOauthConfigured"));
                                 await fetchProviders();
+                                await fetchKeys();
+                                // Auto-save provider config (baseUrl/models) and close form
+                                if (editing) {
+                                  const next = { ...providers };
+                                  const ent: any = { baseUrl: editing.baseUrl, auth: "oauth" };
+                                  if (editing.api) ent.api = editing.api;
+                                  if (editing.models.length > 0) ent.models = editing.models;
+                                  next[editing.name] = ent;
+                                  await saveProviders(next);
+                                  setEditing(null);
+                                  setEditOrigName(null);
+                                }
                               }
                             } else if (s.status === "error") {
                               clearInterval(poll);
