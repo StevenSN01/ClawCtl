@@ -439,17 +439,71 @@ export function lifecycleRoutes(hostStore: HostStore, manager: InstanceManager, 
           if (!p.models) p.models = [];
           // Write API key to auth-profiles.json for all agents
           if (p.apiKey && p.auth !== "oauth") {
+            const newKey = p.apiKey;
+            // Verify key before writing
+            const baseUrl = p.baseUrl || "";
+            const vResult = await verifyProviderKey(exec, providerName, newKey, baseUrl);
+            if (vResult.status === "invalid") {
+              return c.json({ error: `API key invalid for ${providerName}: ${vResult.error}` }, 400);
+            }
+
+            // Determine profile ID using first agent's profiles as reference
+            let newProfileKey = `${providerName}:default`;
+            const firstProfiles = await readAuthProfiles(exec, configDir, agentIds[0]);
+            if (!firstProfiles.profiles) firstProfiles.profiles = {};
+
+            // Check for duplicate key
+            for (const [pid, cred] of Object.entries(firstProfiles.profiles) as [string, any][]) {
+              if (cred.provider === providerName && (cred.key === newKey || cred.token === newKey)) {
+                return c.json({ error: `Duplicate key: already exists as ${pid}` }, 409);
+              }
+            }
+
+            if (firstProfiles.profiles[newProfileKey]) {
+              let n = 2;
+              while (firstProfiles.profiles[`${providerName}:key${n}`]) n++;
+              newProfileKey = `${providerName}:key${n}`;
+            }
+
             for (const agentId of agentIds) {
-              const profiles = await readAuthProfiles(exec, configDir, agentId);
+              const profiles = agentId === agentIds[0]
+                ? firstProfiles
+                : await readAuthProfiles(exec, configDir, agentId);
               if (!profiles.version) profiles.version = 1;
               if (!profiles.profiles) profiles.profiles = {};
-              profiles.profiles[`${providerName}:default`] = {
+
+              profiles.profiles[newProfileKey] = {
                 type: "api_key",
                 provider: providerName,
-                key: p.apiKey,
+                key: newKey,
               };
+
+              // Update order array
+              if (!profiles.order) profiles.order = {};
+              if (!profiles.order[providerName]) {
+                profiles.order[providerName] = Object.keys(profiles.profiles)
+                  .filter((k) => k.startsWith(`${providerName}:`));
+              } else if (!profiles.order[providerName].includes(newProfileKey)) {
+                profiles.order[providerName].push(newProfileKey);
+              }
+
               await writeAuthProfiles(exec, configDir, agentId, profiles);
             }
+
+            // Cache verification result
+            db.prepare(`
+              INSERT INTO provider_keys (instance_id, profile_id, provider, key_masked, status, checked_at, error_message, email, account_info)
+              VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?, ?)
+              ON CONFLICT (instance_id, profile_id) DO UPDATE SET
+                status = excluded.status, checked_at = excluded.checked_at,
+                error_message = excluded.error_message, email = excluded.email,
+                account_info = excluded.account_info
+            `).run(
+              id, newProfileKey, providerName, maskKey(newKey),
+              vResult.status, vResult.error || null,
+              vResult.email || null,
+              vResult.accountInfo ? JSON.stringify(vResult.accountInfo) : null,
+            );
           }
         }
       }

@@ -330,4 +330,58 @@ describe("Lifecycle API - Key Management", () => {
       expect(res.status).toBe(404);
     });
   });
+
+  describe("PUT /:id/providers — key append", () => {
+    it("appends key2 when default already exists with different key", async () => {
+      vi.mocked(readAuthProfiles).mockResolvedValue({
+        version: 1,
+        profiles: {
+          "openai:default": { type: "api_key", provider: "openai", key: "sk-existing" },
+        },
+      });
+      vi.mocked(readRemoteConfig).mockResolvedValue({
+        agents: { list: [{ id: "main" }] },
+        models: { providers: {} },
+      });
+      vi.mocked(verifyProviderKey).mockResolvedValue({ status: "valid" });
+      const { writeAuthProfiles } = await import("../../lifecycle/config.js");
+
+      const res = await app.request("/lifecycle/ssh-1-main/providers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providers: { openai: { baseUrl: "https://api.openai.com/v1", apiKey: "sk-newkey1234", models: [] } },
+        }),
+      });
+      expect(res.status).toBe(200);
+
+      const writeCalls = vi.mocked(writeAuthProfiles).mock.calls;
+      expect(writeCalls.length).toBeGreaterThan(0);
+      const lastData = writeCalls[writeCalls.length - 1][3];
+      expect(lastData.profiles["openai:default"]).toBeDefined();
+      expect(lastData.profiles["openai:key2"]).toBeDefined();
+    });
+
+    it("rejects duplicate key", async () => {
+      vi.mocked(readAuthProfiles).mockResolvedValue({
+        version: 1,
+        profiles: {
+          "openai:default": { type: "api_key", provider: "openai", key: "sk-samekey1234" },
+        },
+      });
+      vi.mocked(readRemoteConfig).mockResolvedValue({
+        agents: { list: [{ id: "main" }] },
+        models: { providers: {} },
+      });
+
+      const res = await app.request("/lifecycle/ssh-1-main/providers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providers: { openai: { baseUrl: "https://api.openai.com/v1", apiKey: "sk-samekey1234", models: [] } },
+        }),
+      });
+      expect(res.status).toBe(409);
+    });
+  });
 });
