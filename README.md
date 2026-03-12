@@ -32,9 +32,9 @@ ClawCtl fixes this. It connects to every OpenClaw Gateway over SSH tunnels, pull
 |:--------:|:----------:|:-----:|
 | ![Security](docs/screenshots/security.png) | ![Monitoring](docs/screenshots/monitoring.png) | ![Tools](docs/screenshots/tools.png) |
 
-| Agent Configuration |
-|:-------------------:|
-| ![Agent Config](docs/screenshots/instance-agents.png) |
+| Agent Config | Model & Key Management | Skill Management |
+|:------------:|:----------------------:|:-----------------:|
+| ![Agent Config](docs/screenshots/instance-agents.png) | ![Models](docs/screenshots/instance-models.png) | ![Skills](docs/screenshots/instance-skills.png) |
 
 ## Features
 
