@@ -433,9 +433,13 @@ export async function streamChannelCreate(
       await rollback(exec, backupPath, configDir);
       return false;
     }
-    // Strip /dist/... or /bin/... to get install root
+    // Strip to get install root: /dist/..., /bin/..., or trailing filename (.mjs/.js)
     const clawBin = whichR.stdout.trim();
-    const installDir = clawBin.replace(/\/(dist|bin)\/.*$/, "");
+    let installDir = clawBin.replace(/\/(dist|bin)\/.*$/, "");
+    if (installDir === clawBin) {
+      // No /dist/ or /bin/ found — strip trailing filename (e.g. /openclaw.mjs)
+      installDir = clawBin.replace(/\/[^/]+$/, "");
+    }
     const extDir = `${installDir}/${def.extensionDir}`;
     const depCheck = await exec.exec(`test -d "${extDir}/node_modules/${def.depCheckPath}" && echo yes`);
     const depsInstalled = depCheck.stdout.trim() === "yes";
