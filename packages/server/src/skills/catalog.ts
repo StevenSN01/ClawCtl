@@ -553,16 +553,48 @@ export function filterCatalog(opts: {
 const CLAWHUB_API = "https://clawhub.ai";
 const CLAWHUB_SEARCH_TIMEOUT = 8_000;
 
+// --- ClawHub rate-limit / backoff layer ---
+let clawhubBackoffUntil = 0; // epoch ms — skip requests until this time
+
+async function clawhubFetch(url: string, timeoutMs = 5_000): Promise<Response | null> {
+  if (Date.now() < clawhubBackoffUntil) return null; // still in backoff
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("retry-after") || "30") || 30;
+      clawhubBackoffUntil = Date.now() + retryAfter * 1000;
+      return null;
+    }
+    return res;
+  } catch {
+    return null;
+  }
+}
+
+/** Run async tasks with limited concurrency */
+export async function pMapClawHub<T, R>(items: T[], fn: (item: T) => Promise<R>, concurrency: number): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let idx = 0;
+  const run = async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => run()));
+  return results;
+}
+
 /** Fetch detail for a single ClawHub skill (stats, author, moderation). Returns null on failure. */
 export async function fetchClawHubDetail(slug: string): Promise<{
   downloads: number; stars: number; installs: number; author?: string; suspicious?: boolean;
 } | null> {
+  const res = await clawhubFetch(`${CLAWHUB_API}/api/v1/skills/${encodeURIComponent(slug)}`, 5_000);
+  if (!res || !res.ok) return null;
   try {
-    const res = await fetch(`${CLAWHUB_API}/api/v1/skills/${encodeURIComponent(slug)}`, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) return null;
     const data = await res.json() as {
       skill?: { stats?: { downloads?: number; stars?: number; installsAllTime?: number } };
       owner?: { handle?: string; displayName?: string };
@@ -587,20 +619,14 @@ export async function searchClawHub(
   offset = 0,
 ): Promise<SkillCatalogEntry[]> {
   if (!query.trim()) return [];
+  const url = `${CLAWHUB_API}/api/v1/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
+  const res = await clawhubFetch(url, CLAWHUB_SEARCH_TIMEOUT);
+  if (!res) throw new Error("rate_limited"); // backoff or network error
+  if (!res.ok) return [];
   try {
-    const url = `${CLAWHUB_API}/api/v1/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(CLAWHUB_SEARCH_TIMEOUT),
-    });
-    if (!res.ok) {
-      if (res.status === 429) throw new Error("rate_limited");
-      return [];
-    }
     const data = await res.json() as { results?: { slug: string; displayName: string; summary?: string; score?: number; updatedAt?: number }[] };
     if (!data.results) return [];
 
-    // Map search results to basic entries (fast — no detail calls)
     return data.results.map((r) => ({
       name: r.slug,
       description: r.summary || r.displayName,
@@ -609,6 +635,6 @@ export async function searchClawHub(
       tags: [],
     }));
   } catch {
-    return []; // Network error, timeout — silently degrade
+    return [];
   }
 }

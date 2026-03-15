@@ -12,6 +12,7 @@ import {
   filterCatalog,
   searchClawHub,
   fetchClawHubDetail,
+  pMapClawHub,
 } from "../skills/catalog.js";
 import { getInstallCommand, getUnsupportedReason } from "../skills/install-map.js";
 
@@ -74,7 +75,7 @@ export function skillRoutes(db: Database.Database, manager: InstanceManager, hos
     const slugs = slugsParam.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 30);
     if (slugs.length === 0) return c.json({ details: {} });
 
-    const results = await Promise.all(slugs.map((s) => fetchClawHubDetail(s).then((d) => [s, d] as const)));
+    const results = await pMapClawHub(slugs, async (s) => [s, await fetchClawHubDetail(s)] as const, 3);
     const details: Record<string, { downloads: number; stars: number; installs: number; author?: string }> = {};
     for (const [slug, d] of results) {
       if (d) details[slug] = d;
