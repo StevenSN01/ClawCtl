@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { RefreshCw, Search, X, LayoutGrid, List, Trash2, ShieldAlert, Store, Server } from "lucide-react";
 import {
@@ -664,34 +664,37 @@ function InstalledSkillsView({ instances, catalog, t }: {
   const connected = instances.filter((inst) => inst.connection.status === "connected");
   const bundledNames = useMemo(() => new Set(catalog.map((c) => c.name)), [catalog]);
 
-  // Collect all unique clawhub skill names across all instances to check suspicious status
-  const clawhubSkillNames = useMemo(() => {
-    const names = new Set<string>();
+  // Collect all unique clawhub skill names — use stable string key to avoid re-fetching on every poll
+  const clawhubSkillKey = useMemo(() => {
+    const names: string[] = [];
     for (const inst of connected) {
       for (const sk of inst.skills || []) {
-        if (sk.status !== "missing" && !bundledNames.has(sk.name)) names.add(sk.name);
+        if (sk.status !== "missing" && !bundledNames.has(sk.name) && !names.includes(sk.name)) names.push(sk.name);
       }
     }
-    return names;
+    names.sort();
+    return names.join(",");
   }, [connected, bundledNames]);
 
-  // Fetch suspicious status for clawhub skills
+  // Fetch suspicious status for clawhub skills (only when skill list actually changes)
+  const suspiciousFetchedRef = useRef<string>("");
   useEffect(() => {
-    if (clawhubSkillNames.size === 0) return;
-    let cancelled = false;
-    const slugs = Array.from(clawhubSkillNames).slice(0, 30);
+    if (!clawhubSkillKey || clawhubSkillKey === suspiciousFetchedRef.current) return;
+    suspiciousFetchedRef.current = clawhubSkillKey;
+    const slugs = clawhubSkillKey.split(",").slice(0, 30);
     get<{ details: Record<string, { suspicious?: boolean }> }>(
       `/skills/clawhub/details?slugs=${encodeURIComponent(slugs.join(","))}`,
     ).then((res) => {
-      if (cancelled || !res.details) return;
-      const sus = new Set<string>();
-      for (const [slug, d] of Object.entries(res.details)) {
-        if (d.suspicious) sus.add(slug);
-      }
-      setSuspiciousSkills(sus);
+      if (!res.details) return;
+      setSuspiciousSkills((prev) => {
+        const next = new Set(prev);
+        for (const [slug, d] of Object.entries(res.details)) {
+          if (d.suspicious) next.add(slug); else next.delete(slug);
+        }
+        return next;
+      });
     }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [clawhubSkillNames]);
+  }, [clawhubSkillKey]);
 
   const handleUninstall = async (instanceId: string, skillName: string, agentIds: string[]) => {
     setUninstalling(`${instanceId}:${skillName}`);
