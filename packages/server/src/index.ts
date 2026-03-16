@@ -92,8 +92,9 @@ app.route("/api/assistant", assistantRoutes(hostStore, manager, llm, db));
 // Skills — catalog, templates, install/uninstall
 app.route("/api/skills", skillRoutes(db, manager, hostStore));
 
-// Serve frontend in production
+// Serve frontend in production (static files + SPA fallback)
 app.use("/*", serveStatic({ root: "../web/dist" }));
+app.use("/*", serveStatic({ root: "../web/dist", path: "index.html" }));
 
 const port = parseInt(process.env.CLAWCTL_PORT || "7100");
 
