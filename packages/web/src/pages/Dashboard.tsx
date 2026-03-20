@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { RefreshCw, Plus, X, Download, Play } from "lucide-react";
+import { RefreshCw, Plus, X, Download, Play, Trash2 } from "lucide-react";
 import { ReactFlow, type Node, type Edge, Background, Controls } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useInstances, type InstanceInfo } from "../hooks/useInstances";
 import { useAuth } from "../hooks/useAuth";
-import { get, post } from "../lib/api";
+import { get, post, del } from "../lib/api";
 
 
 interface RemoteHost {
@@ -32,11 +32,13 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () => void | Promise<void> }) {
+function InstanceCard({ inst, onRefresh, onDelete }: { inst: InstanceInfo; onRefresh: () => void | Promise<void>; onDelete: (id: string) => void }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [starting, setStarting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const totalTokens = inst.sessions.reduce((t, s) => t + (s.totalTokens || 0), 0);
   const criticalCount = inst.securityAudit?.filter((a) => a.level === "critical").length || 0;
   const isDown = inst.connection.status === "error" || inst.connection.status === "disconnected";
@@ -49,6 +51,19 @@ function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () =
     setRefreshing(true);
     try { await onRefresh(); } catch { /* ignore */ }
     finally { setRefreshing(false); }
+  };
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await del(`/instances/${inst.id}`);
+      onDelete(inst.id);
+    } catch (err: any) {
+      console.error("Failed to delete instance:", err);
+      setDeleting(false);
+    }
   };
 
   const handleStart = async (e: React.MouseEvent) => {
@@ -96,11 +111,40 @@ function InstanceCard({ inst, onRefresh }: { inst: InstanceInfo; onRefresh: () =
             onClick={handleRefresh}
             disabled={refreshing}
             className="text-ink-3 hover:text-ink transition-colors disabled:opacity-50"
+            title={t("common.refresh")}
           >
             <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
           </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(true); }}
+            disabled={deleting}
+            className="text-ink-3 hover:text-danger transition-colors disabled:opacity-50"
+            title={t("common.delete")}
+          >
+            <Trash2 size={14} />
+          </button>
         </div>
       </div>
+      {showDeleteConfirm && (
+        <div className="mb-3 p-3 bg-danger/10 border border-danger/30 rounded-lg">
+          <p className="text-sm text-danger mb-2">{t("dashboard.deleteConfirm", { label: inst.connection.label || inst.id })}</p>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(false); }}
+              className="px-3 py-1 text-xs text-ink-2 hover:text-ink transition-colors"
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="px-3 py-1 text-xs bg-danger hover:bg-danger/80 text-white rounded transition-colors disabled:opacity-50"
+            >
+              {deleting ? t("common.deleting") : t("common.delete")}
+            </button>
+          </div>
+        </div>
+      )}
       {isDown && (
         <div className="mb-2">
           <button
@@ -771,7 +815,17 @@ function InstancesByHost({ instances, emptyHosts, refresh }: { instances: Instan
             <h2 className="text-sm text-ink-3 uppercase tracking-wide mb-3">{displayHostLabel(g.hostLabel)} — {g.instances.length} {t("dashboard.instance", { count: g.instances.length })}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {g.instances.map((inst) => (
-                <InstanceCard key={inst.id} inst={inst} onRefresh={() => post(`/instances/${inst.id}/refresh`).then(refresh)} />
+                <InstanceCard
+                  key={inst.id}
+                  inst={inst}
+                  onRefresh={() => post(`/instances/${inst.id}/refresh`).then(refresh)}
+                  onDelete={(id) => {
+                    // Find the instance in the instances array and remove it
+                    const updatedInstances = instances.filter(i => i.id !== id);
+                    // Force a refresh to update the UI
+                    refresh();
+                  }}
+                />
               ))}
             </div>
           </div>

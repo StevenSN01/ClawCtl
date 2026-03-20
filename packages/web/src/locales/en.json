@@ -89,6 +89,7 @@
     "starting": "Starting...",
     "gatewayStartingHint": "Gateway may still be starting. Try refreshing.",
     "startFailed": "Start failed",
+    "deleteConfirm": "Are you sure you want to delete instance {{label}}?",
     "agent": "agent",
     "session": "session",
     "criticalIssue": "critical issue",

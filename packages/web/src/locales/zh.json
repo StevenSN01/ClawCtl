@@ -89,6 +89,7 @@
     "starting": "启动中...",
     "gatewayStartingHint": "网关可能仍在启动中，请尝试刷新。",
     "startFailed": "启动失败",
+    "deleteConfirm": "确定要删除实例 {{label}} 吗？",
     "agent": "智能体",
     "session": "会话",
     "criticalIssue": "严重问题",
