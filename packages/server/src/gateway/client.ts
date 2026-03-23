@@ -98,10 +98,12 @@ export class GatewayClient extends EventEmitter {
             if (this.conn.token) {
               connectParams.auth = { token: this.conn.token };
             }
-            // Add device identity — required when no shared auth token
-            try {
-              connectParams.device = buildDeviceParams(nonce, this.conn.token);
-            } catch { /* skip device identity if generation fails */ }
+            // Add device identity only when no auth token (token mode doesn't need device identity)
+            if (!this.conn.token) {
+              try {
+                connectParams.device = buildDeviceParams(nonce, this.conn.token);
+              } catch { /* skip device identity if generation fails */ }
+            }
             this.rpc("connect", connectParams)
               .then((helloOk) => {
                 this.helloOk = helloOk;

@@ -96,14 +96,40 @@ export class InstanceManager extends EventEmitter {
   private doConnect(id: string) {
     const client = this.clients.get(id);
     if (!client) return;
+
+    const label = client.conn.label || id;
+    console.log(`[manager] 🔌 Connecting to ${label} at ${client.conn.url}`);
+
     client.connect()
-      .then(() => client.fetchFullInstance())
+      .then(() => {
+        console.log(`[manager] ✓ Connected to ${label}, fetching instance info`);
+        return client.fetchFullInstance();
+      })
       .then((info) => {
+        const agentCount = info.agents?.length || 0;
+        const sessionCount = info.sessions?.length || 0;
+        const channelCount = info.channels?.length || 0;
+        console.log(`[manager] ✓ Fetched info for ${label}:`, {
+          agents: agentCount,
+          sessions: sessionCount,
+          channels: channelCount,
+          version: info.version
+        });
         this.instances.set(id, info);
         this.reconnectAttempts.delete(id);
         this.emit("change");
       })
-      .catch(() => {});
+      .catch((err) => {
+        const errorMsg = err?.message || String(err);
+        console.error(`[manager] ✗ Failed to connect to ${label}: ${errorMsg}`);
+        console.error(`[manager]   Connection state:`, {
+          id: label,
+          url: client.conn.url,
+          status: client.conn.status,
+          error: client.conn.error
+        });
+        this.emit("change");
+      });
   }
 
   private scheduleReconnect(id: string) {
